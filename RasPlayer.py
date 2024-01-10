@@ -14,15 +14,6 @@ from mpyg321.MPyg123Player import MPyg123Player # or MPyg321Player if you instal
 # ----------------------------------------
 
 GPIO.setmode(GPIO.BCM)      # Set's GPIO pins to BCM (logic) GPIO numbering
-# INPUT_FWD = 17
-# # LED_FWD = 23
-# INPUT_PRV = 27
-# INPUT_MODE_CHG = 27
-
-# INPUT_VOL_UP = ??
-# INPUT_VOL_DOWN = 27
-
-
 
 # -------- types --------
 class PlayerMode(IntEnum):
@@ -144,13 +135,12 @@ setVolume(currentVolume)
 # play startup sound
 player.play_song(startupSound)
 
-
-
 GPIO.add_event_detect(Input.INPUT_FWD, GPIO.RISING, callback=inputNxtSong, bouncetime=200)
 # GPIO.add_event_detect(INPUT_PRV, GPIO.RISING, callback=inputPrvSong, bouncetime=200)
 GPIO.add_event_detect(Input.INPUT_MODE_CHG, GPIO.RISING, callback=inputModeChange, bouncetime=200)
 # GPIO.add_event_detect(INPUT_VOL_DOWN, GPIO.RISING, callback=volumeDown, bouncetime=200)
 # GPIO.add_event_detect(INPUT_VOL_UP, GPIO.RISING, callback=volumeUp, bouncetime=200)
 
+# loop until termination
 while True:
     sleep(1)
