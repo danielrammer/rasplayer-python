@@ -102,11 +102,11 @@ def setPlayerMode(mode):
     global playerMode
     playerMode = mode
     if playerMode == PlayerMode.MUSIC:
-        selectList("./Music/*.mp3")
+        selectList("./Sounds/Music/*.mp3")
     elif playerMode == PlayerMode.ANIMALS:
-        selectList("./Animals/*.mp3")
+        selectList("./Sounds/Animals/*.mp3")
     else:
-        selectList("./Music/*.mp3")
+        selectList("./Sounds/Music/*.mp3")
 
 def nextPlayerMode():
     global playerMode
@@ -133,15 +133,12 @@ def inputModeChange(channel):
     print("INPUT mode change")
     pausePlayer()
     nextPlayerMode()
-    # selectList("./Animals/*.mp3")
-
 
 # -------- program start --------
 # sound played on startup
-startupSound = "./System/TurnOn.mp3"
+startupSound = "./Sounds/System/TurnOn.mp3"
 # set initial file list - probably music list
 setPlayerMode(PlayerMode.MUSIC)
-# selectList("./Music/*.mp3")
 setVolume(currentVolume)
 
 # play startup sound
