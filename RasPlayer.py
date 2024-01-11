@@ -24,10 +24,10 @@ class Input(IntEnum):
     INPUT_FWD = 17
     # LED_FWD = 23
     # INPUT_PRV = 27
-    INPUT_MODE_CHG = 27
-    # INPUT_VOL_UP = ??
-    # INPUT_VOL_DOWN = 27
-
+    # INPUT_MODE_CHG = 27
+    INPUT_VOL_UP = 27
+    INPUT_VOL_DOWN = 22
+    NONE = 1337
 player = MPyg123Player()
 filelist = ""
 currentSong = 0
@@ -37,8 +37,9 @@ playerMode = PlayerMode.MUSIC
 GPIO.setup(Input.INPUT_FWD, GPIO.IN)
 # GPIO.setup(LED_FWD, GPIO.OUT)
 # GPIO.setup(INPUT_PRV, GPIO.IN)
-GPIO.setup(Input.INPUT_MODE_CHG, GPIO.IN)
-# GPIO.setup(INPUT_VOL_DOWN, GPIO.IN)
+# GPIO.setup(Input.INPUT_MODE_CHG, GPIO.IN)
+GPIO.setup(Input.INPUT_VOL_UP, GPIO.IN)
+GPIO.setup(Input.INPUT_VOL_DOWN, GPIO.IN)
 
 # -------- function definitions --------
 def nextSong():
@@ -77,14 +78,13 @@ def selectList(path):
     print("selected list: " + str(filelist))
 
 def volumeUp(channel):
-    print("vol up")
+    # print("vol up")
     global currentVolume
     currentVolume = min(currentVolume + 10, 100)
     setVolume(currentVolume)
 
 def volumeDown(channel):
-    print("c: " + str(channel))
-    print("vol down")
+    # print("vol down")
     global currentVolume
     currentVolume = max(0, currentVolume - 10)
     setVolume(currentVolume)
@@ -107,9 +107,9 @@ def nextPlayerMode():
 
 GPIO.setup(Input.INPUT_FWD, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 # GPIO.setup(Input.INPUT_PRV, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-GPIO.setup(Input.INPUT_MODE_CHG, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-# GPIO.setup(Input.INPUT_VOL_DOWN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-# GPIO.setup(Input.INPUT_VOL_UP, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+# GPIO.setup(Input.INPUT_MODE_CHG, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(Input.INPUT_VOL_UP, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(Input.INPUT_VOL_DOWN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 # -------- GPIO input functions --------
 def inputNxtSong(channel):
@@ -135,11 +135,11 @@ setVolume(currentVolume)
 # play startup sound
 player.play_song(startupSound)
 
-GPIO.add_event_detect(Input.INPUT_FWD, GPIO.RISING, callback=inputNxtSong, bouncetime=200)
-# GPIO.add_event_detect(INPUT_PRV, GPIO.RISING, callback=inputPrvSong, bouncetime=200)
-GPIO.add_event_detect(Input.INPUT_MODE_CHG, GPIO.RISING, callback=inputModeChange, bouncetime=200)
-# GPIO.add_event_detect(INPUT_VOL_DOWN, GPIO.RISING, callback=volumeDown, bouncetime=200)
-# GPIO.add_event_detect(INPUT_VOL_UP, GPIO.RISING, callback=volumeUp, bouncetime=200)
+GPIO.add_event_detect(Input.INPUT_FWD, GPIO.RISING, callback=inputNxtSong, bouncetime=300)
+# GPIO.add_event_detect(INPUT_PRV, GPIO.RISING, callback=inputPrvSong, bouncetime=300)
+# GPIO.add_event_detect(Input.INPUT_MODE_CHG, GPIO.RISING, callback=inputModeChange, bouncetime=300)
+GPIO.add_event_detect(Input.INPUT_VOL_UP, GPIO.RISING, callback=volumeUp, bouncetime=300)
+GPIO.add_event_detect(Input.INPUT_VOL_DOWN, GPIO.RISING, callback=volumeDown, bouncetime=300)
 
 # loop until termination
 while True:
