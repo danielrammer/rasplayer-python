@@ -6,7 +6,7 @@ from time import sleep
 from enum import IntEnum
 from mpyg321.MPyg123Player import MPyg123Player # or MPyg321Player if you installed mpg321
 
-from RasPlayerSounds import RasPlayerSounds
+from SoundPlayer import SoundPlayer
 
 ## -------- HOW TO RUN THAT STUFF --------
 # RUN: xvfb-run python RasPlayer.py
@@ -21,66 +21,57 @@ class PlayerMode(IntEnum):
     MUSIC = 0
     ANIMALS = 1
     INSTRUMENT = 2
+    ONLINE = 3
 
+# these inputs are global - work for all modes
+# maybe fwd and prv are not available for all
 class Input(IntEnum):
-    INPUT_FWD = 17
-    # LED_FWD = 23
-    # INPUT_PRV = 27
-    # INPUT_MODE_CHG = 27
-    INPUT_VOL_UP = 27
-    INPUT_VOL_DOWN = 22
+    INPUT_FWD = 22
+    INPUT_PRV = 27
+    # INPUT_MODE_CHG = 27 # will be wire (banana)
+    # INPUT_VOL_UP = 27
+    # INPUT_VOL_DOWN = 22
     NONE = 1337
-player = MPyg123Player()
+mpgPlayer = MPyg123Player()
 filelist = ""
 currentSong = 0
 currentVolume = 60
 playerMode = PlayerMode.MUSIC
 
 
-currentPlayer = RasPlayerSounds(player, "./Sounds/Music/*.mp3")
+soundPlayer = SoundPlayer(mpgPlayer, "./Sounds/Music/*.mp3")
 
 GPIO.setup(Input.INPUT_FWD, GPIO.IN)
-# GPIO.setup(LED_FWD, GPIO.OUT)
-# GPIO.setup(INPUT_PRV, GPIO.IN)
+GPIO.setup(Input.INPUT_PRV, GPIO.IN)
 # GPIO.setup(Input.INPUT_MODE_CHG, GPIO.IN)
 # GPIO.setup(Input.INPUT_VOL_UP, GPIO.IN)
 # GPIO.setup(Input.INPUT_VOL_DOWN, GPIO.IN)
 
 # -------- function definitions --------
-def nextSong():
-    global filelist
-    global currentSong
-    currentSong = (currentSong + 1) % numberOfSongs
-    print("play: " + filelist[currentSong])
-    player.stop() # TODO: check if necessary
-    player.play_song(filelist[currentSong])
+# def nextSong():
+#     # global filelist
+#     # global currentSong
+#     # currentSong = (currentSong + 1) % numberOfSongs
+#     # print("play: " + filelist[currentSong])
+#     # mpgPlayer.stop() # TODO: check if necessary
+#     # mpgPlayer.play_song(filelist[currentSong])
 
-def previousSong():
-    global filelist
-    global currentSong
-    currentSong = max((currentSong - 1), 0)
-    print("play: " + filelist[currentSong])
-    player.stop() # TODO: check if necessary
-    player.play_song(filelist[currentSong])
+# def previousSong():
+#     # global filelist
+#     # global currentSong
+#     # currentSong = max((currentSong - 1), 0)
+#     # print("play: " + filelist[currentSong])
+#     # mpgPlayer.stop() # TODO: check if necessary
+#     # mpgPlayer.play_song(filelist[currentSong])
 
 # other control functions
 def pausePlayer():
     print("pause")
-    player.pause()
+    mpgPlayer.pause()
 
 def setVolume(vol):
     print("set volume to " + str(vol))
     subprocess.call(["amixer", "-D", "default", "sset", "Master", str(vol)+"%"], stdout=subprocess.DEVNULL)
-
-def selectList(path):
-    global filelist
-    global numberOfSongs
-    global currentSong
-    currentSong = -1
-    filelist = glob.glob(path)
-    filelist.sort()
-    numberOfSongs = len(filelist)
-    print("selected list: " + str(filelist))
 
 def volumeUp(channel):
     # print("vol up")
@@ -96,16 +87,18 @@ def volumeDown(channel):
 
 def setPlayerMode(mode):
     global playerMode
+    global soundPlayer
     playerMode = mode
     if playerMode == PlayerMode.MUSIC:
-        selectList("./Sounds/Music/*.mp3")
+        soundPlayer.setList("./Sounds/Music/*.mp3")
     elif playerMode == PlayerMode.ANIMALS:
-        selectList("./Sounds/Animals/*.mp3")
+        soundPlayer.setList("./Sounds/Music/*.mp3")
     elif playerMode == PlayerMode.INSTRUMENT:
-        print("not implemented yet!")
-        # selectList("./Sounds/Animals/*.mp3")
+        print("PlayerMode.INSTRUMENT is not implemented yet!")
+    elif playerMode == PlayerMode.ONLINE:
+        print("PlayerMode.ONLINE is not implemented yet!")
     else:
-        selectList("./Sounds/Music/*.mp3")
+        soundPlayer.setList("./Sounds/Music/*.mp3")
 
 def nextPlayerMode():
     global playerMode
@@ -114,41 +107,40 @@ def nextPlayerMode():
     setPlayerMode(playerMode)
 
 GPIO.setup(Input.INPUT_FWD, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-# GPIO.setup(Input.INPUT_PRV, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(Input.INPUT_PRV, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 # GPIO.setup(Input.INPUT_MODE_CHG, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 # GPIO.setup(Input.INPUT_VOL_UP, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 # GPIO.setup(Input.INPUT_VOL_DOWN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 # -------- GPIO input functions --------
 def inputNxtSong(channel):
-    nextSong()
+    # nextSong()
     # GPIO.output(LED_FWD, 1)
     print("INPUT next")
+    soundPlayer.playNextSong()
 def inputPrvSong(channel):
     # GPIO.output(LED_FWD, 0)
-    previousSong()
+    # previousSong()
     print("INPUT prev")
+    soundPlayer.playPreviousSong()
+
 def inputModeChange(channel):
     print("INPUT mode change")
     pausePlayer()
     nextPlayerMode()
 
 # -------- program start --------
-# sound played on startup
-startupSound = "./Sounds/System/TurnOn.mp3"
-# set initial file list - probably music list
-setPlayerMode(PlayerMode.MUSIC)
+# default volume on startup
 setVolume(currentVolume)
 
+# sound played on startup
+startupSound = "./Sounds/System/TurnOn.mp3"
+
 # play startup sound
-player.play_song(startupSound)
-
-sleep(1)
-
-# currentPlayer.playSongExt("do it")
+soundPlayer.playSong(startupSound)
 
 GPIO.add_event_detect(Input.INPUT_FWD, GPIO.RISING, callback=inputNxtSong, bouncetime=300)
-# GPIO.add_event_detect(INPUT_PRV, GPIO.RISING, callback=inputPrvSong, bouncetime=300)
+GPIO.add_event_detect(Input.INPUT_PRV, GPIO.RISING, callback=inputPrvSong, bouncetime=300)
 # GPIO.add_event_detect(Input.INPUT_MODE_CHG, GPIO.RISING, callback=inputModeChange, bouncetime=300)
 # GPIO.add_event_detect(Input.INPUT_VOL_UP, GPIO.RISING, callback=volumeUp, bouncetime=300)
 # GPIO.add_event_detect(Input.INPUT_VOL_DOWN, GPIO.RISING, callback=volumeDown, bouncetime=300)
