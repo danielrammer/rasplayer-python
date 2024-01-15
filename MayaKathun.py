@@ -31,6 +31,10 @@ class Input(IntEnum):
     # INPUT_MODE_CHG = 27 # will be wire (banana)
     # INPUT_VOL_UP = 27
     # INPUT_VOL_DOWN = 22
+    # INPUT_MUSIC_MODE = ??
+    # INPUT_ANIMAL_MODE = ??
+    # INPUT_INSTRUMENT_MODE = ??
+    # INPUT_ONLINE_MODE = ??
     NONE = 1337
 mpgPlayer = MPyg123Player()
 filelist = ""
@@ -43,32 +47,17 @@ soundPlayer = SoundPlayer(mpgPlayer, "./Sounds/Music/*.mp3")
 
 GPIO.setup(Input.INPUT_FWD, GPIO.IN)
 GPIO.setup(Input.INPUT_PRV, GPIO.IN)
-# GPIO.setup(Input.INPUT_MODE_CHG, GPIO.IN)
+# GPIO.setup(Input.INPUT_MODE_CHG, GPIO.IN)         # TODO: will be replaced by defined banana
 # GPIO.setup(Input.INPUT_VOL_UP, GPIO.IN)
 # GPIO.setup(Input.INPUT_VOL_DOWN, GPIO.IN)
+# GPIO.setup(Input.INPUT_MUSIC_MODE, GPIO.IN)       # TODO: banana
+# GPIO.setup(Input.INPUT_ANIMAL_MODE, GPIO.IN)      # TODO: banana
+# GPIO.setup(Input.INPUT_INSTRUMENT_MODE, GPIO.IN)  # TODO: banana
+# GPIO.setup(Input.INPUT_ONLINE_MODE, GPIO.IN)      # TODO: banana
 
 # -------- function definitions --------
-# def nextSong():
-#     # global filelist
-#     # global currentSong
-#     # currentSong = (currentSong + 1) % numberOfSongs
-#     # print("play: " + filelist[currentSong])
-#     # mpgPlayer.stop() # TODO: check if necessary
-#     # mpgPlayer.play_song(filelist[currentSong])
-
-# def previousSong():
-#     # global filelist
-#     # global currentSong
-#     # currentSong = max((currentSong - 1), 0)
-#     # print("play: " + filelist[currentSong])
-#     # mpgPlayer.stop() # TODO: check if necessary
-#     # mpgPlayer.play_song(filelist[currentSong])
 
 # other control functions
-def pausePlayer():
-    print("pause")
-    mpgPlayer.pause()
-
 def setVolume(vol):
     print("set volume to " + str(vol))
     subprocess.call(["amixer", "-D", "default", "sset", "Master", str(vol)+"%"], stdout=subprocess.DEVNULL)
@@ -85,6 +74,7 @@ def volumeDown(channel):
     currentVolume = max(0, currentVolume - 10)
     setVolume(currentVolume)
 
+# TODO: set this by defined GOIO inputs (bananas)
 def setPlayerMode(mode):
     global playerMode
     global soundPlayer
@@ -111,6 +101,10 @@ GPIO.setup(Input.INPUT_PRV, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 # GPIO.setup(Input.INPUT_MODE_CHG, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 # GPIO.setup(Input.INPUT_VOL_UP, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 # GPIO.setup(Input.INPUT_VOL_DOWN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+# GPIO.setup(Input.INPUT_MUSIC_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+# GPIO.setup(Input.INPUT_ANIMAL_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+# GPIO.setup(Input.INPUT_INSTRUMENT_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+# GPIO.setup(Input.INPUT_ONLINE_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 # -------- GPIO input functions --------
 def inputNxtSong(channel):
@@ -126,7 +120,7 @@ def inputPrvSong(channel):
 
 def inputModeChange(channel):
     print("INPUT mode change")
-    pausePlayer()
+    soundPlayer.pausePlayer()
     nextPlayerMode()
 
 # -------- program start --------

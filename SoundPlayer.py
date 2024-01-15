@@ -9,9 +9,8 @@ class SoundPlayer:
     player = None
     filelist = ""
     numberOfSongsInList = 0
-    currentFileType = 0 # this is the type (e.g. pig sound)
-    currentFile = 0     # this is the actual sound file (e.g. pig sound #2)
-
+    currentFileType = 0 # TODO: this is the type (e.g. pig sound)
+    currentFile = 0     # TODO: this is the actual sound file (e.g. pig sound #2)
 
     class GenericInput(IntEnum):
         IN_1 = 23
@@ -47,6 +46,7 @@ class SoundPlayer:
     # TODO: make 2D array to allow more sounds per type
     def setList(self, path):
         self.currentFileType = -1
+        self.currentFile = -1
         self.filelist = glob.glob(path)
         self.filelist.sort()
         self.numberOfSongsInList = len(self.filelist)
@@ -58,18 +58,33 @@ class SoundPlayer:
         self.player.play_song(path)
 
     def playNextSong(self):
-        self.currentFileType = (self.currentFileType + 1) % self.numberOfSongsInList
+        # play first if list was newly selected
+        # TODO: distinguish between currentFileType and currentFile in the future
+        if self.currentFileType < 0:
+            self.currentFileType = 0
+        else:
+            self.currentFileType = (self.currentFileType + 1) % self.numberOfSongsInList
+
         print("play next: " + self.filelist[self.currentFileType])
         self.player.stop() # TODO: check if necessary
         self.player.play_song(self.filelist[self.currentFileType])
 
     def playPreviousSong(self):
-        self.currentFileType = self.currentFileType - 1
+        # play first if list was newly selected
+        # TODO: distinguish between currentFileType and currentFile in the future
         if self.currentFileType < 0:
-            self.currentFileType = self.numberOfSongsInList - 1
+            self.currentFileType = 0
+        else:
+            self.currentFileType = self.currentFileType - 1
+            if self.currentFileType < 0:
+                self.currentFileType = self.numberOfSongsInList - 1
+
         print("play prev: " + self.filelist[self.currentFileType])
         self.player.stop() # TODO: check if necessary
         self.player.play_song(self.filelist[self.currentFileType])
+
+    def pausePlayer(self):
+        self.player.pause()
 
     def buttonDown(self, soundNumber):
         print("pressed generic button " + str(soundNumber))
