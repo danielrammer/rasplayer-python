@@ -7,6 +7,7 @@ from enum import IntEnum
 from mpyg321.MPyg123Player import MPyg123Player # or MPyg321Player if you installed mpg321
 
 from SoundPlayer import SoundPlayer
+from OnlinePlayer import OnlinePlayer
 
 ## -------- HOW TO RUN THAT STUFF --------
 # RUN: xvfb-run python RasPlayer.py
@@ -43,7 +44,7 @@ currentVolume = 60
 playerMode = PlayerMode.MUSIC
 
 
-soundPlayer = SoundPlayer(mpgPlayer, "./Sounds/Music/*.mp3")
+soundPlayer = OnlinePlayer(mpgPlayer, "") # SoundPlayer(mpgPlayer, "./Sounds/Music/*.mp3")
 
 GPIO.setup(Input.INPUT_FWD, GPIO.IN)
 GPIO.setup(Input.INPUT_PRV, GPIO.IN)
@@ -111,12 +112,12 @@ def inputNxtSong(channel):
     # nextSong()
     # GPIO.output(LED_FWD, 1)
     print("INPUT next")
-    soundPlayer.playNextSong()
+    soundPlayer.playNext()
 def inputPrvSong(channel):
     # GPIO.output(LED_FWD, 0)
     # previousSong()
     print("INPUT prev")
-    soundPlayer.playPreviousSong()
+    soundPlayer.playPrevious()
 
 def inputModeChange(channel):
     print("INPUT mode change")
@@ -132,6 +133,8 @@ startupSound = "./Sounds/System/TurnOn.mp3"
 
 # play startup sound
 soundPlayer.playSong(startupSound)
+# sleep(2)
+# soundPlayer.playSong("http://live-radio02.mediahubaustralia.com/2FMW/mp3")
 
 GPIO.add_event_detect(Input.INPUT_FWD, GPIO.RISING, callback=inputNxtSong, bouncetime=300)
 GPIO.add_event_detect(Input.INPUT_PRV, GPIO.RISING, callback=inputPrvSong, bouncetime=300)
