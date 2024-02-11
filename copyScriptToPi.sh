@@ -1,2 +1,2 @@
 #!/bin/bash
-rsync -av MayaKathun.py SoundPlayer.py OnlinePlayer.py dani@192.168.0.250:/home/dani/RasPlayer
+rsync -av RasPlayer.py SoundPlayer.py OnlinePlayer.py dnl@192.168.0.251:/home/dnl/RasPlayer

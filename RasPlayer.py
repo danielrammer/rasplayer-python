@@ -5,6 +5,8 @@ import RPi.GPIO as GPIO
 from time import sleep
 from enum import IntEnum
 from mpyg321.MPyg123Player import MPyg123Player # or MPyg321Player if you installed mpg321
+import signal
+import sys
 
 from SoundPlayer import SoundPlayer
 from OnlinePlayer import OnlinePlayer
@@ -14,6 +16,17 @@ from OnlinePlayer import OnlinePlayer
 # set volume
 # amixer sset 'Master' 50%
 # ----------------------------------------
+
+def cleanup_and_exit(signum, frame):
+    print("Cleaning up GPIO and exiting.")
+    GPIO.cleanup()  # Cleanup GPIO
+    sys.exit(0)  # Exit the script
+
+# Setup signal handler for SIGINT (Ctrl+C) and SIGTERM
+signal.signal(signal.SIGINT, cleanup_and_exit)
+signal.signal(signal.SIGTERM, cleanup_and_exit)
+
+
 
 GPIO.setmode(GPIO.BCM)      # Set's GPIO pins to BCM (logic) GPIO numbering
 
@@ -40,9 +53,8 @@ class Input(IntEnum):
 mpgPlayer = MPyg123Player()
 filelist = ""
 currentSong = 0
-currentVolume = 60
+currentVolume = 80
 playerMode = PlayerMode.MUSIC
-
 
 soundPlayer = OnlinePlayer(mpgPlayer, "") # SoundPlayer(mpgPlayer, "./Sounds/Music/*.mp3")
 
@@ -61,7 +73,10 @@ GPIO.setup(Input.INPUT_PRV, GPIO.IN)
 # other control functions
 def setVolume(vol):
     print("set volume to " + str(vol))
-    subprocess.call(["amixer", "-D", "default", "sset", "Master", str(vol)+"%"], stdout=subprocess.DEVNULL)
+    # subprocess.call(["amixer", "-D", "default", "sset", "Master", str(vol)+"%"], stdout=subprocess.DEVNULL)
+    command  = ['amixer', '-c', '0', 'sset', 'PCM',  str(vol)+'%']
+    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
 
 def volumeUp(channel):
     # print("vol up")
