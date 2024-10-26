@@ -3,13 +3,13 @@
 in `/etc/dhcpcd.conf`add:
 
 interface wlan0 
-static ip_address=192.168.0.251
-static routers=192.168.0.1
+static ip_address=192.168.0.251<br>
+static routers=192.168.0.1<br>
 static domain_name_servers=8.8.8.8
 
 # installed packages
-sudo apt-get install mpg123
-sudo apt install python3-pip
+sudo apt-get install mpg123<br>
+sudo apt install python3-pip<br>
 sudo pip install mpyg321
 
 # boot time optimization
@@ -52,8 +52,12 @@ sudo systemctl daemon-reload<br>
 sudo systemctl enable rasplayer.service<br>
 sudo systemctl start rasplayer.service
 
-## read log
+## analyze
+### read log
 journalctl -u rasplayer.service -f
+
+### check under voltage
+dmesg
 
 
 # save power (is this useful for LITE installation?)
