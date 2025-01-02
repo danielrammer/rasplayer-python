@@ -9,8 +9,6 @@ import pygame
 NUMBER_OF_SAMPLE_SETS = 3
 
 class SamplePlayer(SoundPlayerBase):
-    currentSampleSet = 0
-
     instrumentRootPath = "./Sounds/Instruments"
     animalRootPath = "./Sounds/Animals"
 
@@ -19,8 +17,9 @@ class SamplePlayer(SoundPlayerBase):
     def __init__(self, player, path):
         SoundPlayerBase.__init__(self, player, path)
         self.activeSoundFileRoot = path
-        print("SamplePlayer set list: " + f"{self.activeSoundFileRoot}/*.mp3")
-        self.setList(f"{self.activeSoundFileRoot}/*.mp3")
+        self.currentSampleSet = 0
+        print("SamplePlayer set list: " + f"{self.activeSoundFileRoot}/{self.currentSampleSet}/*.mp3")
+        self.setList(f"{self.activeSoundFileRoot}/{self.currentSampleSet}/*.mp3")
 
         # Initialize Pygame mixer
         pygame.mixer.init()
@@ -29,11 +28,19 @@ class SamplePlayer(SoundPlayerBase):
         # for index, sample in enumerate(self.samples):
         #     print(f"Sample {index}: {sample}")
 
+    def preload_samples():
+        self.samples = [pygame.mixer.Sound(file) for file in self.filelist]
+
     # select next button mapping for generic buttons
     def playNext(self):
         print("SamplePlayer playNext - next set")
         self.currentSampleSet = (self.currentSampleSet + 1) % NUMBER_OF_SAMPLE_SETS
 
+        print("SamplePlayer set list: " + f"{self.activeSoundFileRoot}/{self.currentSampleSet}/*.mp3")
+        self.setList(f"{self.activeSoundFileRoot}/{self.currentSampleSet}/*.mp3")
+        # self.samples = []
+        pygame.mixer.init()
+        self.samples = [pygame.mixer.Sound(file) for file in self.filelist]
 
     # select previous button mapping for generic buttons
     def playPrevious(self):
@@ -41,8 +48,12 @@ class SamplePlayer(SoundPlayerBase):
         self.currentSampleSet = self.currentSampleSet - 1
         if self.currentSampleSet < 0:
             self.currentSampleSet = NUMBER_OF_SAMPLE_SETS - 1
-        self.setList(f"{self.activeSoundFileRoot}/*.mp3")
 
+        print("SamplePlayer set list: " + f"{self.activeSoundFileRoot}/{self.currentSampleSet}/*.mp3")
+        self.setList(f"{self.activeSoundFileRoot}/{self.currentSampleSet}/*.mp3")
+        self.samples = []
+        self.samples = [pygame.mixer.Sound(file) for file in self.filelist]
+        
     # fire sound file
     def buttonDown(self, buttonNumber):
         print("SamplePlayer pressed generic button in online player " + str(buttonNumber))

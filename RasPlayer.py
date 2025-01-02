@@ -61,7 +61,7 @@ currentSong = 0
 currentVolume = 80
 playerMode = PlayerMode.MUSIC
 
-soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Instruments/01")#MusicPlayer(mpgPlayer, "./Sounds/Music/02/*.mp3") # OnlinePlayer(mpgPlayer, "") 
+soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Instruments")#MusicPlayer(mpgPlayer, "./Sounds/Music/02/*.mp3") # OnlinePlayer(mpgPlayer, "") 
 
 GPIO.setup(Input.INPUT_FWD, GPIO.IN)
 GPIO.setup(Input.INPUT_PRV, GPIO.IN)
@@ -135,15 +135,16 @@ GPIO.setup(Input.INPUT_PLAY_PAUSE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 # GPIO.setup(Input.INPUT_ONLINE_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 # -------- GPIO input functions --------
-def inputNxtSong(channel):
+def inputForward(channel):
     # nextSong()
     # GPIO.output(LED_FWD, 1)
-    print("INPUT next")
+    print("INPUT inputForward")
     soundPlayer.playNext()
-def inputPrvSong(channel):
+
+def inputPrevious(channel):
     # GPIO.output(LED_FWD, 0)
     # previousSong()
-    print("INPUT prev")
+    print("INPUT inputPrevious")
     soundPlayer.playPrevious()
 
 def playPausePlayer(self):
@@ -166,8 +167,8 @@ soundPlayer.playSong(startupSound)
 # sleep(2)
 # soundPlayer.playSong("http://live-radio02.mediahubaustralia.com/2FMW/mp3")
 
-GPIO.add_event_detect(Input.INPUT_FWD, GPIO.RISING, callback=inputNxtSong, bouncetime=300)
-GPIO.add_event_detect(Input.INPUT_PRV, GPIO.RISING, callback=inputPrvSong, bouncetime=300)
+GPIO.add_event_detect(Input.INPUT_FWD, GPIO.RISING, callback=inputForward, bouncetime=300)
+GPIO.add_event_detect(Input.INPUT_PRV, GPIO.RISING, callback=inputPrevious, bouncetime=300)
 GPIO.add_event_detect(Input.INPUT_PLAY_PAUSE, GPIO.RISING, callback=playPausePlayer, bouncetime=300)
 # GPIO.add_event_detect(Input.INPUT_MODE_CHG, GPIO.RISING, callback=inputModeChange, bouncetime=300)
 # GPIO.add_event_detect(Input.INPUT_VOL_UP, GPIO.RISING, callback=volumeUp, bouncetime=300)
