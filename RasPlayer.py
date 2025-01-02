@@ -8,8 +8,10 @@ from mpyg321.MPyg123Player import MPyg123Player # or MPyg321Player if you instal
 import signal
 import sys
 
-from SoundPlayer import SoundPlayer
+from SoundPlayer import SoundPlayerBase
+from MusicPlayer import MusicPlayer
 from OnlinePlayer import OnlinePlayer
+from SamplePlayer import SamplePlayer
 
 ## -------- HOW TO RUN THAT STUFF --------
 # RUN: xvfb-run python RasPlayer.py
@@ -36,12 +38,14 @@ class PlayerMode(IntEnum):
     ANIMALS = 1
     INSTRUMENT = 2
     ONLINE = 3
+    NONE = 4
 
 # these inputs are global - work for all modes
 # maybe fwd and prv are not available for all
 class Input(IntEnum):
-    INPUT_FWD = 22
-    INPUT_PRV = 27
+    INPUT_FWD = 20#22
+    INPUT_PRV = 21#27
+    INPUT_PLAY_PAUSE = 23#27
     # INPUT_MODE_CHG = 27 # will be wire (banana)
     # INPUT_VOL_UP = 27
     # INPUT_VOL_DOWN = 22
@@ -56,10 +60,11 @@ currentSong = 0
 currentVolume = 80
 playerMode = PlayerMode.MUSIC
 
-soundPlayer = OnlinePlayer(mpgPlayer, "") # SoundPlayer(mpgPlayer, "./Sounds/Music/*.mp3")
+soundPlayer = MusicPlayer(mpgPlayer, "./Sounds/Music/02/*.mp3") # OnlinePlayer(mpgPlayer, "") 
 
 GPIO.setup(Input.INPUT_FWD, GPIO.IN)
 GPIO.setup(Input.INPUT_PRV, GPIO.IN)
+GPIO.setup(Input.INPUT_PLAY_PAUSE, GPIO.IN)
 # GPIO.setup(Input.INPUT_MODE_CHG, GPIO.IN)         # TODO: will be replaced by defined banana
 # GPIO.setup(Input.INPUT_VOL_UP, GPIO.IN)
 # GPIO.setup(Input.INPUT_VOL_DOWN, GPIO.IN)
@@ -96,15 +101,20 @@ def setPlayerMode(mode):
     global soundPlayer
     playerMode = mode
     if playerMode == PlayerMode.MUSIC:
-        soundPlayer.setList("./Sounds/Music/*.mp3")
+        soundPlayer.setList("./Sounds/Music/01/*.mp3")
     elif playerMode == PlayerMode.ANIMALS:
-        soundPlayer.setList("./Sounds/Music/*.mp3")
+        soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Animals")
+        soundPlayer.setList("./Sounds/Animals/*.mp3")
     elif playerMode == PlayerMode.INSTRUMENT:
-        print("PlayerMode.INSTRUMENT is not implemented yet!")
+        print("PlayerMode.INSTRUMENT active!")
+        soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Instruments")
+        soundPlayer.setList("./Sounds/Instruments/01/*.mp3")
     elif playerMode == PlayerMode.ONLINE:
-        print("PlayerMode.ONLINE is not implemented yet!")
+        print("PlayerMode.ONLINE active")
+        soundPlayer = OnlinePlayer(mpgPlayer, "")
+
     else:
-        soundPlayer.setList("./Sounds/Music/*.mp3")
+        soundPlayer.setList("./Sounds/Music/01*.mp3")
 
 def nextPlayerMode():
     global playerMode
@@ -114,6 +124,7 @@ def nextPlayerMode():
 
 GPIO.setup(Input.INPUT_FWD, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 GPIO.setup(Input.INPUT_PRV, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(Input.INPUT_PLAY_PAUSE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 # GPIO.setup(Input.INPUT_MODE_CHG, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 # GPIO.setup(Input.INPUT_VOL_UP, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 # GPIO.setup(Input.INPUT_VOL_DOWN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
@@ -134,6 +145,9 @@ def inputPrvSong(channel):
     print("INPUT prev")
     soundPlayer.playPrevious()
 
+def playPausePlayer(self):
+    soundPlayer.playPausePlayer()
+
 def inputModeChange(channel):
     print("INPUT mode change")
     soundPlayer.pausePlayer()
@@ -153,6 +167,7 @@ soundPlayer.playSong(startupSound)
 
 GPIO.add_event_detect(Input.INPUT_FWD, GPIO.RISING, callback=inputNxtSong, bouncetime=300)
 GPIO.add_event_detect(Input.INPUT_PRV, GPIO.RISING, callback=inputPrvSong, bouncetime=300)
+GPIO.add_event_detect(Input.INPUT_PLAY_PAUSE, GPIO.RISING, callback=playPausePlayer, bouncetime=300)
 # GPIO.add_event_detect(Input.INPUT_MODE_CHG, GPIO.RISING, callback=inputModeChange, bouncetime=300)
 # GPIO.add_event_detect(Input.INPUT_VOL_UP, GPIO.RISING, callback=volumeUp, bouncetime=300)
 # GPIO.add_event_detect(Input.INPUT_VOL_DOWN, GPIO.RISING, callback=volumeDown, bouncetime=300)

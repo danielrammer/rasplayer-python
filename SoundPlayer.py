@@ -4,35 +4,33 @@ import RPi.GPIO as GPIO
 from enum import IntEnum
 from mpyg321.MPyg123Player import MPyg123Player # or MPyg321Player if you installed mpg321
 
-class SoundPlayer:
-
+class SoundPlayerBase:
     player = None
+    is_playing = False
     filelist = ""
     numberOfItemsInList = 0
     currentFileType = 0 # TODO: this is the type (e.g. pig sound)
     currentFile = 0     # TODO: this is the actual sound file (e.g. pig sound #2)
 
+    # input mapping to GPIO BCM
     class GenericInput(IntEnum):
-        IN_1 = 23
-        IN_2 = 24
+        IN_1 = 27#23
+        IN_2 = 22#24
         IN_3 = 25
         IN_4 = 12
         IN_5 = 16
-        IN_6 = 5
-        IN_7 = 6
 
     inputs = [GenericInput.IN_1, 
               GenericInput.IN_2,
               GenericInput.IN_3,
               GenericInput.IN_4,
-              GenericInput.IN_5,
-              GenericInput.IN_6,
-              GenericInput.IN_7]
+              GenericInput.IN_5]
 
     def __init__(self, player, path):
         print("Instantiated ModeHandler")
         self.player = player
-        self.setList(path)
+        self.is_playing = False
+        # self.setList(path)
         # GPIO setup - use logical numbering not hw numbering
         GPIO.setmode(GPIO.BCM)
         # setup input mapping
@@ -40,6 +38,11 @@ class SoundPlayer:
                 GPIO.setup(i, GPIO.IN)
                 GPIO.setup(i, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
+        GPIO.add_event_detect(self.GenericInput.IN_1, GPIO.RISING,  callback=lambda x : self.buttonDown(1), bouncetime=300)
+        GPIO.add_event_detect(self.GenericInput.IN_2, GPIO.RISING,  callback=lambda x : self.buttonDown(2), bouncetime=300)
+        GPIO.add_event_detect(self.GenericInput.IN_3, GPIO.RISING,  callback=lambda x : self.buttonDown(3), bouncetime=300)
+        GPIO.add_event_detect(self.GenericInput.IN_4, GPIO.RISING,  callback=lambda x : self.buttonDown(4), bouncetime=300)
+        GPIO.add_event_detect(self.GenericInput.IN_5, GPIO.RISING,  callback=lambda x : self.buttonDown(5), bouncetime=300)
 
         # GPIO.add_event_detect(self.GenericInput.IN_1, GPIO.RISING,  callback=lambda x : self.buttonDown(1), bouncetime=300)
 
@@ -83,7 +86,17 @@ class SoundPlayer:
         self.player.stop() # TODO: check if necessary
         self.player.play_song(self.filelist[self.currentFileType])
 
+    def playPausePlayer(self): 
+        if self.is_playing:
+            self.player.pause()
+            self.is_playing = False
+        else:
+            self.player.play()
+            self.is_playing = True
+
+
     def pausePlayer(self):
+        self.is_playing = False
         self.player.pause()
 
     def buttonDown(self, buttonNumber):
@@ -92,3 +105,14 @@ class SoundPlayer:
         # print("play: " + self.filelist[self.currentSong])
         # self.player.stop() # TODO: check if necessary
         self.player.play_song(self.filelist[buttonNumber])
+
+    def on_playback_started(self):
+        print("Playback started")
+        self.is_playing = True
+
+    def on_playback_finished(self):
+        print("Playback finished")
+        self.is_playing = False
+
+    def is_playing_now(self):
+        return self.is_playing
