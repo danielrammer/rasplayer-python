@@ -14,10 +14,10 @@ class SoundPlayerBase:
 
     # input mapping to GPIO BCM
     class GenericInput(IntEnum):
-        IN_1 = 27#23
-        IN_2 = 22#24
-        IN_3 = 25
-        IN_4 = 12
+        IN_1 = 11
+        IN_2 = 5
+        IN_3 = 6
+        IN_4 = 19
         IN_5 = 16
 
     inputs = [GenericInput.IN_1, 
@@ -27,7 +27,7 @@ class SoundPlayerBase:
               GenericInput.IN_5]
 
     def __init__(self, player, path):
-        print("Instantiated ModeHandler")
+        print("SoundPlayerBase Instantiated ModeHandler")
         self.player = player
         self.is_playing = False
         # self.setList(path)
@@ -37,12 +37,13 @@ class SoundPlayerBase:
         for i in self.inputs:
                 GPIO.setup(i, GPIO.IN)
                 GPIO.setup(i, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+                print("setup input: " + str(i) + " to IN")
 
-        GPIO.add_event_detect(self.GenericInput.IN_1, GPIO.RISING,  callback=lambda x : self.buttonDown(1), bouncetime=300)
-        GPIO.add_event_detect(self.GenericInput.IN_2, GPIO.RISING,  callback=lambda x : self.buttonDown(2), bouncetime=300)
-        GPIO.add_event_detect(self.GenericInput.IN_3, GPIO.RISING,  callback=lambda x : self.buttonDown(3), bouncetime=300)
-        GPIO.add_event_detect(self.GenericInput.IN_4, GPIO.RISING,  callback=lambda x : self.buttonDown(4), bouncetime=300)
-        GPIO.add_event_detect(self.GenericInput.IN_5, GPIO.RISING,  callback=lambda x : self.buttonDown(5), bouncetime=300)
+        GPIO.add_event_detect(self.GenericInput.IN_1, GPIO.RISING,  callback=lambda x : self.buttonDown(0), bouncetime=100)
+        GPIO.add_event_detect(self.GenericInput.IN_2, GPIO.RISING,  callback=lambda x : self.buttonDown(1), bouncetime=100)
+        GPIO.add_event_detect(self.GenericInput.IN_3, GPIO.RISING,  callback=lambda x : self.buttonDown(2), bouncetime=100)
+        GPIO.add_event_detect(self.GenericInput.IN_4, GPIO.RISING,  callback=lambda x : self.buttonDown(3), bouncetime=100)
+        GPIO.add_event_detect(self.GenericInput.IN_5, GPIO.RISING,  callback=lambda x : self.buttonDown(4), bouncetime=100)
 
         # GPIO.add_event_detect(self.GenericInput.IN_1, GPIO.RISING,  callback=lambda x : self.buttonDown(1), bouncetime=300)
 

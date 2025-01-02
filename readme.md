@@ -12,6 +12,9 @@ sudo apt-get install mpg123<br>
 sudo apt install python3-pip<br>
 sudo pip install mpyg321
 
+## for Sampler
+pip install pygame
+
 # boot time optimization
 use headless installation<br>
 **DONT disable `dhcpcd.service`**
@@ -78,3 +81,4 @@ System Options -> Boot / Auto Login -> B1 Console
 ## turning off further services
 sudo systemctl disable keyboard-setup.service
 sudo systemctl disable dphys-swapfile.service
+

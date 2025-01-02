@@ -2,6 +2,9 @@
 
 from SoundPlayer import SoundPlayerBase
 from enum import IntEnum
+import glob
+
+import pygame
 
 NUMBER_OF_SAMPLE_SETS = 3
 
@@ -16,12 +19,21 @@ class SamplePlayer(SoundPlayerBase):
     def __init__(self, player, path):
         SoundPlayerBase.__init__(self, player, path)
         self.activeSoundFileRoot = path
+        print("SamplePlayer set list: " + f"{self.activeSoundFileRoot}/*.mp3")
+        self.setList(f"{self.activeSoundFileRoot}/*.mp3")
+
+        # Initialize Pygame mixer
+        pygame.mixer.init()
+        # preload all samples for a given list
+        self.samples = [pygame.mixer.Sound(file) for file in self.filelist]
+        # for index, sample in enumerate(self.samples):
+        #     print(f"Sample {index}: {sample}")
 
     # select next button mapping for generic buttons
     def playNext(self):
         print("SamplePlayer playNext - next set")
         self.currentSampleSet = (self.currentSampleSet + 1) % NUMBER_OF_SAMPLE_SETS
-        self.setList(f"{self.activeSoundFileRoot}/*.mp3")
+
 
     # select previous button mapping for generic buttons
     def playPrevious(self):
@@ -35,6 +47,12 @@ class SamplePlayer(SoundPlayerBase):
     def buttonDown(self, buttonNumber):
         print("SamplePlayer pressed generic button in online player " + str(buttonNumber))
         self.currentFileType = 1
-        # print("play: " + self.filelist[self.currentSong])
-        # self.player.stop() # TODO: check if necessary
-        self.player.play_song(self.radios[buttonNumber])
+        # print("list length: " + str(len(self.filelist)))
+        self.player.stop() # TODO: check if necessary
+        print("play: " + self.filelist[buttonNumber])
+        # self.player.play_song(self.filelist[buttonNumber])
+
+        # Load and play an MP3 file
+        # pygame.mixer.music.load(self.filelist[buttonNumber])
+        # pygame.mixer.music.play()
+        self.samples[buttonNumber].play()

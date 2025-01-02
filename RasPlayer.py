@@ -43,16 +43,17 @@ class PlayerMode(IntEnum):
 # these inputs are global - work for all modes
 # maybe fwd and prv are not available for all
 class Input(IntEnum):
-    INPUT_FWD = 20#22
-    INPUT_PRV = 21#27
-    INPUT_PLAY_PAUSE = 23#27
+    INPUT_PLAY_PAUSE = 4
+    INPUT_FWD = 17
+    INPUT_PRV = 27
     # INPUT_MODE_CHG = 27 # will be wire (banana)
-    # INPUT_VOL_UP = 27
-    # INPUT_VOL_DOWN = 22
-    # INPUT_MUSIC_MODE = ??
-    # INPUT_ANIMAL_MODE = ??
-    # INPUT_INSTRUMENT_MODE = ??
-    # INPUT_ONLINE_MODE = ??
+    INPUT_VOL_UP = 22
+    INPUT_VOL_DOWN = 23
+    INPUT_MUSIC_MODE = 24
+    INPUT_ONLINE_MODE = 10
+    INPUT_ANIMAL_MODE = 9
+    INPUT_INSTRUMENT_MODE = 25
+
     NONE = 1337
 mpgPlayer = MPyg123Player()
 filelist = ""
@@ -60,7 +61,7 @@ currentSong = 0
 currentVolume = 80
 playerMode = PlayerMode.MUSIC
 
-soundPlayer = MusicPlayer(mpgPlayer, "./Sounds/Music/02/*.mp3") # OnlinePlayer(mpgPlayer, "") 
+soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Instruments/01")#MusicPlayer(mpgPlayer, "./Sounds/Music/02/*.mp3") # OnlinePlayer(mpgPlayer, "") 
 
 GPIO.setup(Input.INPUT_FWD, GPIO.IN)
 GPIO.setup(Input.INPUT_PRV, GPIO.IN)
