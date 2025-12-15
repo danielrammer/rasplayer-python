@@ -53,5 +53,7 @@ class MusicPlayer(SoundPlayerBase):
         # self.player.stop() # TODO: check if necessary
         # self.player.play_song(self.filelist[buttonNumber])
 
-        self.setList(f"./Sounds/Music/0{buttonNumber}/*.mp3")
-        self.playNext()
+        songNumber = buttonNumber % len(self.filelist)
+        # self.setList(f"./Sounds/Music/0{songNumber}/*.mp3")
+        # self.playNext()
+        self.playSong(self.filelist[songNumber])
