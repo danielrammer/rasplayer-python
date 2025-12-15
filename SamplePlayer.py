@@ -75,10 +75,18 @@ class SamplePlayer(SoundPlayerBase):
         self.currentFileType = 1
         # print("list length: " + str(len(self.filelist)))
         self.player.stop() # TODO: check if necessary
-        print("play: " + self.filelist[buttonNumber])
-        # self.player.play_song(self.filelist[buttonNumber])
 
-        # Load and play an MP3 file
-        # pygame.mixer.music.load(self.filelist[buttonNumber])
-        # pygame.mixer.music.play()
-        self.samples[buttonNumber].play()
+
+
+        if (len(self.filelist) > 0):
+            soundNumber = buttonNumber % len(self.filelist)
+            print("play: " + self.filelist[soundNumber])
+            # self.player.play_song(self.filelist[buttonNumber])
+
+            # Load and play an MP3 file
+            # pygame.mixer.music.load(self.filelist[buttonNumber])
+            # pygame.mixer.music.play()
+            self.samples[soundNumber].play()
+        else:
+            print("No sound files loaded!")
+        
