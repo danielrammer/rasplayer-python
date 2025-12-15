@@ -35,10 +35,11 @@ class SoundPlayerBase:
         GPIO.setmode(GPIO.BCM)
         # setup input mapping
         for i in self.inputs:
-                GPIO.setup(i, GPIO.IN)
-                GPIO.setup(i, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-                print("setup input: " + str(i) + " to IN")
+            GPIO.setup(i, GPIO.IN)
+            GPIO.setup(i, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+            print("setup input: " + str(i) + " to IN")
 
+        self.removeAllGenericGPIOEvents()
         GPIO.add_event_detect(self.GenericInput.IN_1, GPIO.RISING,  callback=lambda x : self.buttonDown(0), bouncetime=100)
         GPIO.add_event_detect(self.GenericInput.IN_2, GPIO.RISING,  callback=lambda x : self.buttonDown(1), bouncetime=100)
         GPIO.add_event_detect(self.GenericInput.IN_3, GPIO.RISING,  callback=lambda x : self.buttonDown(2), bouncetime=100)
@@ -46,6 +47,14 @@ class SoundPlayerBase:
         GPIO.add_event_detect(self.GenericInput.IN_5, GPIO.RISING,  callback=lambda x : self.buttonDown(4), bouncetime=100)
 
         # GPIO.add_event_detect(self.GenericInput.IN_1, GPIO.RISING,  callback=lambda x : self.buttonDown(1), bouncetime=300)
+
+    def removeAllGenericGPIOEvents(self):
+        print("removing all generic GPIO events")
+        GPIO.remove_event_detect(self.GenericInput.IN_1)
+        GPIO.remove_event_detect(self.GenericInput.IN_2)
+        GPIO.remove_event_detect(self.GenericInput.IN_3)
+        GPIO.remove_event_detect(self.GenericInput.IN_4)
+        GPIO.remove_event_detect(self.GenericInput.IN_5)
 
     # TODO: make 2D array to allow more sounds per type
     def setList(self, path):
@@ -103,7 +112,7 @@ class SoundPlayerBase:
     def buttonDown(self, buttonNumber):
         print("pressed generic button " + str(buttonNumber))
         self.currentFileType = 1
-        # print("play: " + self.filelist[self.currentSong])
+        print("play: " + self.filelist[self.currentSong])
         # self.player.stop() # TODO: check if necessary
         self.player.play_song(self.filelist[buttonNumber])
 

@@ -53,6 +53,7 @@ class Input(IntEnum):
     INPUT_ONLINE_MODE = 10
     INPUT_ANIMAL_MODE = 9
     INPUT_INSTRUMENT_MODE = 25
+    OUTPUT_STATUS_LED = 26
 
     NONE = 1337
 mpgPlayer = MPyg123Player()
@@ -61,18 +62,26 @@ currentSong = 0
 currentVolume = 80
 playerMode = PlayerMode.MUSIC
 
-soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Instruments")#MusicPlayer(mpgPlayer, "./Sounds/Music/02/*.mp3") # OnlinePlayer(mpgPlayer, "") 
+# soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Instruments")#MusicPlayer(mpgPlayer, "./Sounds/Music/02/*.mp3") # OnlinePlayer(mpgPlayer, "") 
+soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Instruments")
+
+# -------- GPIO setup --------
+GPIO.setup(Input.INPUT_PLAY_PAUSE, GPIO.IN)
 
 GPIO.setup(Input.INPUT_FWD, GPIO.IN)
 GPIO.setup(Input.INPUT_PRV, GPIO.IN)
-GPIO.setup(Input.INPUT_PLAY_PAUSE, GPIO.IN)
+
+GPIO.setup(Input.INPUT_VOL_UP, GPIO.IN)
+GPIO.setup(Input.INPUT_VOL_DOWN, GPIO.IN)
+
+GPIO.setup(Input.INPUT_MUSIC_MODE, GPIO.IN)       # TODO: banana
+GPIO.setup(Input.INPUT_ONLINE_MODE, GPIO.IN)      # TODO: banana
+GPIO.setup(Input.INPUT_ANIMAL_MODE, GPIO.IN)      # TODO: banana
+GPIO.setup(Input.INPUT_INSTRUMENT_MODE, GPIO.IN)  # TODO: banana
+
+GPIO.setup(Input.OUTPUT_STATUS_LED, GPIO.OUT)
 # GPIO.setup(Input.INPUT_MODE_CHG, GPIO.IN)         # TODO: will be replaced by defined banana
-# GPIO.setup(Input.INPUT_VOL_UP, GPIO.IN)
-# GPIO.setup(Input.INPUT_VOL_DOWN, GPIO.IN)
-# GPIO.setup(Input.INPUT_MUSIC_MODE, GPIO.IN)       # TODO: banana
-# GPIO.setup(Input.INPUT_ANIMAL_MODE, GPIO.IN)      # TODO: banana
-# GPIO.setup(Input.INPUT_INSTRUMENT_MODE, GPIO.IN)  # TODO: banana
-# GPIO.setup(Input.INPUT_ONLINE_MODE, GPIO.IN)      # TODO: banana
+
 
 # -------- function definitions --------
 
@@ -100,8 +109,14 @@ def volumeDown(channel):
 def setPlayerMode(mode):
     global playerMode
     global soundPlayer
+
+    if (playerMode == mode):
+        print("setPlayerMode: already in mode " + str(mode))
+        return
+    
     playerMode = mode
     if playerMode == PlayerMode.MUSIC:
+        soundPlayer = MusicPlayer(mpgPlayer, "./Sounds/Music/01")
         soundPlayer.setList("./Sounds/Music/01/*.mp3")
     elif playerMode == PlayerMode.ANIMALS:
         soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Animals")
@@ -123,16 +138,20 @@ def nextPlayerMode():
     print("mode: " + str(playerMode))
     setPlayerMode(playerMode)
 
+GPIO.setup(Input.INPUT_PLAY_PAUSE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
 GPIO.setup(Input.INPUT_FWD, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 GPIO.setup(Input.INPUT_PRV, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-GPIO.setup(Input.INPUT_PLAY_PAUSE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
+GPIO.setup(Input.INPUT_VOL_UP, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(Input.INPUT_VOL_DOWN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
+GPIO.setup(Input.INPUT_MUSIC_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(Input.INPUT_ANIMAL_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(Input.INPUT_INSTRUMENT_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(Input.INPUT_ONLINE_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
 # GPIO.setup(Input.INPUT_MODE_CHG, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-# GPIO.setup(Input.INPUT_VOL_UP, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-# GPIO.setup(Input.INPUT_VOL_DOWN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-# GPIO.setup(Input.INPUT_MUSIC_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-# GPIO.setup(Input.INPUT_ANIMAL_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-# GPIO.setup(Input.INPUT_INSTRUMENT_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-# GPIO.setup(Input.INPUT_ONLINE_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 # -------- GPIO input functions --------
 def inputForward(channel):
@@ -148,6 +167,7 @@ def inputPrevious(channel):
     soundPlayer.playPrevious()
 
 def playPausePlayer(self):
+    print("INPUT pause/play")
     soundPlayer.playPausePlayer()
 
 def inputModeChange(channel):
@@ -162,17 +182,28 @@ setVolume(currentVolume)
 # sound played on startup
 startupSound = "./Sounds/System/TurnOn.mp3"
 
+GPIO.output(Input.OUTPUT_STATUS_LED, 1)  # turn on status LED
+
 # play startup sound
 soundPlayer.playSong(startupSound)
-# sleep(2)
+sleep(2)
+soundPlayer = MusicPlayer(mpgPlayer, "./Sounds/Music/02/*.mp3")
 # soundPlayer.playSong("http://live-radio02.mediahubaustralia.com/2FMW/mp3")
+
+
+GPIO.add_event_detect(Input.INPUT_PLAY_PAUSE, GPIO.RISING, callback=playPausePlayer, bouncetime=300)
 
 GPIO.add_event_detect(Input.INPUT_FWD, GPIO.RISING, callback=inputForward, bouncetime=300)
 GPIO.add_event_detect(Input.INPUT_PRV, GPIO.RISING, callback=inputPrevious, bouncetime=300)
-GPIO.add_event_detect(Input.INPUT_PLAY_PAUSE, GPIO.RISING, callback=playPausePlayer, bouncetime=300)
+
 # GPIO.add_event_detect(Input.INPUT_MODE_CHG, GPIO.RISING, callback=inputModeChange, bouncetime=300)
-# GPIO.add_event_detect(Input.INPUT_VOL_UP, GPIO.RISING, callback=volumeUp, bouncetime=300)
-# GPIO.add_event_detect(Input.INPUT_VOL_DOWN, GPIO.RISING, callback=volumeDown, bouncetime=300)
+GPIO.add_event_detect(Input.INPUT_VOL_UP, GPIO.RISING, callback=volumeUp, bouncetime=300)
+GPIO.add_event_detect(Input.INPUT_VOL_DOWN, GPIO.RISING, callback=volumeDown, bouncetime=300)
+
+GPIO.add_event_detect(Input.INPUT_MUSIC_MODE, GPIO.RISING, callback=lambda x : setPlayerMode(PlayerMode.MUSIC), bouncetime=300)
+GPIO.add_event_detect(Input.INPUT_ONLINE_MODE, GPIO.RISING, callback=lambda x : setPlayerMode(PlayerMode.ONLINE), bouncetime=300)
+GPIO.add_event_detect(Input.INPUT_ANIMAL_MODE, GPIO.RISING, callback=lambda x :setPlayerMode(PlayerMode.ANIMALS), bouncetime=300)
+GPIO.add_event_detect(Input.INPUT_INSTRUMENT_MODE, GPIO.RISING, callback=lambda x :setPlayerMode(PlayerMode.INSTRUMENT), bouncetime=300)
 
 # loop until termination
 while True:
