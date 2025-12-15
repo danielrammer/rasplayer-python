@@ -6,6 +6,21 @@ import glob
 
 import pygame
 
+# Ensure mixer initialized with a larger buffer to reduce ALSA underrun occurrences.
+def ensure_mixer_initialized(frequency=44100, size=-16, channels=2, buffer=4096):
+    """Initialize pygame mixer only once with the given parameters.
+
+    Larger buffer sizes (e.g., 4096 or 8192) reduce the chance of ALSA underruns on Raspberry Pi.
+    Call this before loading/playing sounds.
+    """
+    if not pygame.mixer.get_init():
+        try:
+            # pre_init should be called before init to set buffer/format
+            pygame.mixer.pre_init(frequency, size, channels, buffer=buffer)
+            pygame.mixer.init()
+        except Exception as e:
+            print(f"Warning: could not initialize mixer: {e}")
+
 NUMBER_OF_SAMPLE_SETS = 3
 
 class SamplePlayer(SoundPlayerBase):
@@ -21,8 +36,8 @@ class SamplePlayer(SoundPlayerBase):
         print("SamplePlayer set list: " + f"{self.activeSoundFileRoot}/{self.currentSampleSet}/*.mp3")
         self.setList(f"{self.activeSoundFileRoot}/{self.currentSampleSet}/*.mp3")
 
-        # Initialize Pygame mixer
-        pygame.mixer.init()
+        # Initialize Pygame mixer (safe single initialization with larger buffer)
+        ensure_mixer_initialized()
         # preload all samples for a given list
         self.samples = [pygame.mixer.Sound(file) for file in self.filelist]
         # for index, sample in enumerate(self.samples):
@@ -39,7 +54,7 @@ class SamplePlayer(SoundPlayerBase):
         print("SamplePlayer set list: " + f"{self.activeSoundFileRoot}/{self.currentSampleSet}/*.mp3")
         self.setList(f"{self.activeSoundFileRoot}/{self.currentSampleSet}/*.mp3")
         # self.samples = []
-        pygame.mixer.init()
+        # Rebuild sample list without reinitializing the mixer
         self.samples = [pygame.mixer.Sound(file) for file in self.filelist]
 
     # select previous button mapping for generic buttons
@@ -51,7 +66,7 @@ class SamplePlayer(SoundPlayerBase):
 
         print("SamplePlayer set list: " + f"{self.activeSoundFileRoot}/{self.currentSampleSet}/*.mp3")
         self.setList(f"{self.activeSoundFileRoot}/{self.currentSampleSet}/*.mp3")
-        self.samples = []
+        # rebuild samples (don't re-init mixer)
         self.samples = [pygame.mixer.Sound(file) for file in self.filelist]
         
     # fire sound file

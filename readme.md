@@ -82,3 +82,36 @@ System Options -> Boot / Auto Login -> B1 Console
 sudo systemctl disable keyboard-setup.service
 sudo systemctl disable dphys-swapfile.service
 
+## Troubleshooting: ALSA "underrun occurred"
+
+If you see messages like `ALSA lib pcm.c:8545:(snd_pcm_recover) underrun occurred` in the logs when running the player on a Raspberry Pi, this means the audio buffer underflowed (the audio driver ran out of data to play). Common causes and fixes:
+
+- Increase the audio buffer used by the SDL/pygame mixer. In `SamplePlayer.py` we now initialize the mixer once with a larger buffer (default 4096). If underruns persist, try larger values (8192).
+- Avoid reinitializing the mixer frequently (call `pygame.mixer.init()` once). Re-inits can cause glitches.
+- Use WAV (PCM) files instead of MP3s, or pre-convert MP3s to WAV to avoid real-time decoding overhead.
+- Verify CPU/IO load while playing (run `top`/`htop`) — heavy load can cause underruns. Consider closing other processes or raising process priority.
+- Test the audio hardware independent of the app using `aplay`:
+
+```bash
+aplay -D plughw:0,0 /usr/share/sounds/alsa/Front_Center.wav
+journalctl -f | grep -i alsa
+```
+
+- If using ALSA device options, you can tune period_size and buffer_size in `~/.asoundrc` or `/etc/asound.conf` (use carefully).
+- If you continue to see underruns, experiment with the mixer buffer setting in `SamplePlayer.py` (the `ensure_mixer_initialized` helper) and consider converting samples to uncompressed PCM for lower CPU use.
+
+If you'd like, I can add an automated test script that plays a sample in a loop and checks `journalctl` for underrun messages — tell me and I will create it.
+
+### Underrun test script
+
+There's an included test script `tests/underrun_test.py` that plays a WAV in a loop and optionally tails `journalctl` for the word "underrun".
+
+Example (run on the Raspberry Pi):
+
+```bash
+# play sample.wav for 30s with 4096 buffer and check journalctl for underruns
+python3 tests/underrun_test.py /path/to/sample.wav --buffer 4096 --duration 30 --check-journal
+```
+
+Try increasing `--buffer` to 8192 if you still see messages.
+
