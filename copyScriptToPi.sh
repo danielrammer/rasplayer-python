@@ -4,6 +4,6 @@ echo "Copying files to Pi"
 # while [[ $RC -ne 0 ]]
 # do
 #     echo "Trying to copy files to Pi"
-rsync -av RasPlayer.py SoundPlayer.py OnlinePlayer.py SamplePlayer.py MusicPlayer.py dnl@192.168.0.251:/home/dnl/RasPlayer
+rsync -av RasPlayer.py SoundPlayer.py OnlinePlayer.py SamplePlayer.py MusicPlayer.py dnl@192.168.0.70:/home/dnl/RasPlayer
 #     RC=$?
 # done
