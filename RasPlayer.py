@@ -187,7 +187,7 @@ GPIO.output(Input.OUTPUT_STATUS_LED, 1)  # turn on status LED
 # play startup sound
 soundPlayer.playSong(startupSound)
 sleep(2)
-soundPlayer = MusicPlayer(mpgPlayer, "./Sounds/Music/02/*.mp3")
+soundPlayer = MusicPlayer(mpgPlayer, "./Sounds/Music/01/*.mp3")
 # soundPlayer.playSong("http://live-radio02.mediahubaustralia.com/2FMW/mp3")
 
 
