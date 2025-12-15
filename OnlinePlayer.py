@@ -12,6 +12,7 @@ class OnlinePlayer(SoundPlayerBase):
         # GPIO.add_event_detect(self.GenericInput.IN_3, GPIO.RISING,  callback=lambda x : self.buttonDown(3), bouncetime=300)
         # GPIO.add_event_detect(self.GenericInput.IN_4, GPIO.RISING,  callback=lambda x : self.buttonDown(4), bouncetime=300)
         # GPIO.add_event_detect(self.GenericInput.IN_5, GPIO.RISING,  callback=lambda x : self.buttonDown(5), bouncetime=300)
+        self.playNext()
 
     radios = {
         0: "http://mp3channels.webradio.antenne.de/rockantenne",    # Rockantenne

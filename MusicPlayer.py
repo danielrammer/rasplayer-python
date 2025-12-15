@@ -8,6 +8,8 @@ class MusicPlayer(SoundPlayerBase):
         SoundPlayerBase.__init__(self, player, path)
         self.setList(path)
 
+        self.playNext()
+
         # maybe we do the following in the base class!
         # GPIO.add_event_detect(self.GenericInput.IN_1, GPIO.RISING,  callback=lambda x : self.buttonDown(1), bouncetime=300)
         # GPIO.add_event_detect(self.GenericInput.IN_2, GPIO.RISING,  callback=lambda x : self.buttonDown(2), bouncetime=300)
@@ -29,7 +31,7 @@ class MusicPlayer(SoundPlayerBase):
         self.player.stop() # TODO: check if necessary
         self.player.play_song(self.filelist[self.currentFileType])
 
-    # play brevious song in current list
+    # play previous song in current list
     def playPrevious(self):
         print("MusicPlayer playPrevious song")
         # play first if list was newly selected
