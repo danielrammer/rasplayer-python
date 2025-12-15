@@ -1,17 +1,17 @@
 | Pin | BCM | Board | Name                  |
 |-----|-----|-------|-----------------------|
-| 7   | 4   | 1     | INPUT_PLAY_PAUSE      |
-| 11  | 17  | 2     | INPUT_FWD             |
-| 13  | 27  | 3     | INPUT_PRV             |
-| 15  | 22  | 4     | INPUT_VOL_UP          |
-| 16  | 23  | 5     | INPUT_VOL_DOWN        |
-| 18  | 24  | 6     | INPUT_MUSIC_MODE      |
-| 19  | 10  | 7     | INPUT_ONLINE_MODE     |
-| 21  | 9   | 8     | INPUT_ANIMAL_MODE     |
-| 22  | 25  | 9     | INPUT_INSTRUMENT_MODE |
-| 23  | 11  | 10    | GenericInput.IN_1     |
-| 29  | 5   | 11    | GenericInput.IN_2     |
-| 31  | 6   | 12    | GenericInput.IN_3     |
-| 35  | 19  | 13    | GenericInput.IN_4     |
-| 36  | 16  | 14    | GenericInput.IN_5     |
-| 37  | 26  | 15    |                       |
+| 7   | 4   | 1     | <span style="color: brown"> INPUT_PLAY_PAUSE </span>          |
+| 11  | 17  | 2     | <span style="color: darkorange"> INPUT_FWD </span>            |
+| 13  | 27  | 4     | <span style="color: yellow"> INPUT_PRV </span>                |
+| 15  | 22  | 5     | <span style="color: grey"> INPUT_VOL_UP </span>               |
+| 16  | 23  | 7     | <span style="color: violet"> INPUT_VOL_DOWN </span>           |
+| 18  | 24  | 8     | <span style="color: green"> INPUT_MUSIC_MODE </span>          |
+| 19  | 10  | 10    | <span style="color: blue"> INPUT_ONLINE_MODE </span>          |
+| 21  | 9   | 11    | <span style="color: darkorange"> INPUT_ANIMAL_MODE </span>    |
+| 22  | 25  | 13    | <span style="color: brown"> INPUT_INSTRUMENT_MODE </span>     |
+| 23  | 11  | 14    | <span style="color: yellow"> GenericInput.IN_1 </span>        |
+| 29  | 5   | 16    | <span style="color: violet"> GenericInput.IN_2 </span>        |
+| 31  | 6   | 17    | <span style="color: green"> GenericInput.IN_3 </span>         |
+| 35  | 19  | 19    | <span style="color: grey"> GenericInput.IN_4 </span>          |
+| 36  | 16  | 20    | <span style="color: blue"> GenericInput.IN_5 </span>          |
+| 37  | 26  | 15    | <span style="color: white"> OUTPUT_STATUS_LED </span>         |
