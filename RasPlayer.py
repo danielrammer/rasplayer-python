@@ -102,7 +102,7 @@ def volumeUp(channel):
 def volumeDown(channel):
     # print("vol down")
     global currentVolume
-    currentVolume = max(40, currentVolume - 5)
+    currentVolume = max(50, currentVolume - 5)
     setVolume(currentVolume)
 
 # TODO: set this by defined GOIO inputs (bananas)
