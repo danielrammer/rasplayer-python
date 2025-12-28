@@ -96,13 +96,13 @@ def setVolume(vol):
 def volumeUp(channel):
     # print("vol up")
     global currentVolume
-    currentVolume = min(currentVolume + 10, 100)
+    currentVolume = min(currentVolume + 5, 100)
     setVolume(currentVolume)
 
 def volumeDown(channel):
     # print("vol down")
     global currentVolume
-    currentVolume = max(0, currentVolume - 10)
+    currentVolume = max(40, currentVolume - 5)
     setVolume(currentVolume)
 
 # TODO: set this by defined GOIO inputs (bananas)
@@ -191,19 +191,19 @@ soundPlayer = MusicPlayer(mpgPlayer, "./Sounds/Music/01/*.mp3")
 # soundPlayer.playSong("http://live-radio02.mediahubaustralia.com/2FMW/mp3")
 
 
-GPIO.add_event_detect(Input.INPUT_PLAY_PAUSE, GPIO.RISING, callback=playPausePlayer, bouncetime=300)
+GPIO.add_event_detect(Input.INPUT_PLAY_PAUSE, GPIO.RISING, callback=playPausePlayer, bouncetime=500)
 
-GPIO.add_event_detect(Input.INPUT_FWD, GPIO.RISING, callback=inputForward, bouncetime=300)
-GPIO.add_event_detect(Input.INPUT_PRV, GPIO.RISING, callback=inputPrevious, bouncetime=300)
+GPIO.add_event_detect(Input.INPUT_FWD, GPIO.RISING, callback=inputForward, bouncetime=500)
+GPIO.add_event_detect(Input.INPUT_PRV, GPIO.RISING, callback=inputPrevious, bouncetime=500)
 
 # GPIO.add_event_detect(Input.INPUT_MODE_CHG, GPIO.RISING, callback=inputModeChange, bouncetime=300)
-GPIO.add_event_detect(Input.INPUT_VOL_UP, GPIO.RISING, callback=volumeUp, bouncetime=300)
-GPIO.add_event_detect(Input.INPUT_VOL_DOWN, GPIO.RISING, callback=volumeDown, bouncetime=300)
+GPIO.add_event_detect(Input.INPUT_VOL_UP, GPIO.RISING, callback=volumeUp, bouncetime=500)
+GPIO.add_event_detect(Input.INPUT_VOL_DOWN, GPIO.RISING, callback=volumeDown, bouncetime=500)
 
-GPIO.add_event_detect(Input.INPUT_MUSIC_MODE, GPIO.RISING, callback=lambda x : setPlayerMode(PlayerMode.MUSIC), bouncetime=300)
-GPIO.add_event_detect(Input.INPUT_ONLINE_MODE, GPIO.RISING, callback=lambda x : setPlayerMode(PlayerMode.ONLINE), bouncetime=300)
-GPIO.add_event_detect(Input.INPUT_ANIMAL_MODE, GPIO.RISING, callback=lambda x :setPlayerMode(PlayerMode.ANIMALS), bouncetime=300)
-GPIO.add_event_detect(Input.INPUT_INSTRUMENT_MODE, GPIO.RISING, callback=lambda x :setPlayerMode(PlayerMode.INSTRUMENT), bouncetime=300)
+GPIO.add_event_detect(Input.INPUT_MUSIC_MODE, GPIO.RISING, callback=lambda x : setPlayerMode(PlayerMode.MUSIC), bouncetime=500)
+GPIO.add_event_detect(Input.INPUT_ONLINE_MODE, GPIO.RISING, callback=lambda x : setPlayerMode(PlayerMode.ONLINE), bouncetime=500)
+GPIO.add_event_detect(Input.INPUT_ANIMAL_MODE, GPIO.RISING, callback=lambda x :setPlayerMode(PlayerMode.ANIMALS), bouncetime=500)
+GPIO.add_event_detect(Input.INPUT_INSTRUMENT_MODE, GPIO.RISING, callback=lambda x :setPlayerMode(PlayerMode.INSTRUMENT), bouncetime=500)
 
 # loop until termination
 while True:
