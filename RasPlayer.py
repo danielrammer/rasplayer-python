@@ -1,4 +1,4 @@
-#!/usr/bin/python
+
 import glob
 import subprocess
 import RPi.GPIO as GPIO
@@ -63,7 +63,7 @@ currentVolume = 80
 playerMode = PlayerMode.MUSIC
 
 # soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Instruments")#MusicPlayer(mpgPlayer, "./Sounds/Music/02/*.mp3") # OnlinePlayer(mpgPlayer, "") 
-soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Instruments")
+# soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Instruments") 
 
 # -------- GPIO setup --------
 GPIO.setup(Input.INPUT_PLAY_PAUSE, GPIO.IN)
@@ -91,7 +91,6 @@ def setVolume(vol):
     # subprocess.call(["amixer", "-D", "default", "sset", "Master", str(vol)+"%"], stdout=subprocess.DEVNULL)
     command  = ['amixer', '-c', '0', 'sset', 'PCM',  str(vol)+'%']
     result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
 
 def volumeUp(channel):
     # print("vol up")
@@ -124,7 +123,7 @@ def setPlayerMode(mode):
     elif playerMode == PlayerMode.INSTRUMENT:
         print("PlayerMode.INSTRUMENT active!")
         soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Instruments")
-        soundPlayer.setList("./Sounds/Instruments/01/*.mp3")
+        # soundPlayer.setList("./Sounds/Instruments/0/*.mp3")
     elif playerMode == PlayerMode.ONLINE:
         print("PlayerMode.ONLINE active")
         soundPlayer = OnlinePlayer(mpgPlayer, "")
@@ -185,9 +184,10 @@ startupSound = "./Sounds/System/TurnOn.mp3"
 GPIO.output(Input.OUTPUT_STATUS_LED, 1)  # turn on status LED
 
 # play startup sound
+
+# sleep(2)
+soundPlayer = MusicPlayer(mpgPlayer, "./Sounds/Music/00/*.mp3")
 soundPlayer.playSong(startupSound)
-sleep(2)
-soundPlayer = MusicPlayer(mpgPlayer, "./Sounds/Music/01/*.mp3")
 # soundPlayer.playSong("http://live-radio02.mediahubaustralia.com/2FMW/mp3")
 
 
@@ -200,11 +200,13 @@ GPIO.add_event_detect(Input.INPUT_PRV, GPIO.RISING, callback=inputPrevious, boun
 GPIO.add_event_detect(Input.INPUT_VOL_UP, GPIO.RISING, callback=volumeUp, bouncetime=500)
 GPIO.add_event_detect(Input.INPUT_VOL_DOWN, GPIO.RISING, callback=volumeDown, bouncetime=500)
 
-GPIO.add_event_detect(Input.INPUT_MUSIC_MODE, GPIO.RISING, callback=lambda x : setPlayerMode(PlayerMode.MUSIC), bouncetime=500)
-GPIO.add_event_detect(Input.INPUT_ONLINE_MODE, GPIO.RISING, callback=lambda x : setPlayerMode(PlayerMode.ONLINE), bouncetime=500)
-GPIO.add_event_detect(Input.INPUT_ANIMAL_MODE, GPIO.RISING, callback=lambda x :setPlayerMode(PlayerMode.ANIMALS), bouncetime=500)
-GPIO.add_event_detect(Input.INPUT_INSTRUMENT_MODE, GPIO.RISING, callback=lambda x :setPlayerMode(PlayerMode.INSTRUMENT), bouncetime=500)
+GPIO.add_event_detect(Input.INPUT_MUSIC_MODE, GPIO.RISING, callback=lambda x : setPlayerMode(PlayerMode.MUSIC), bouncetime=1000)
+GPIO.add_event_detect(Input.INPUT_ONLINE_MODE, GPIO.RISING, callback=lambda x : setPlayerMode(PlayerMode.ONLINE), bouncetime=1000)
+GPIO.add_event_detect(Input.INPUT_ANIMAL_MODE, GPIO.RISING, callback=lambda x :setPlayerMode(PlayerMode.ANIMALS), bouncetime=1000)
+GPIO.add_event_detect(Input.INPUT_INSTRUMENT_MODE, GPIO.RISING, callback=lambda x :setPlayerMode(PlayerMode.INSTRUMENT), bouncetime=1000)
 
 # loop until termination
 while True:
-    sleep(1)
+    if soundPlayer is SamplePlayer:
+        SamplePlayer(soundPlayer).update()
+    sleep(100)

@@ -3,7 +3,6 @@
 from SoundPlayer import SoundPlayerBase
 from enum import IntEnum
 import glob
-
 import pygame
 
 # Ensure mixer initialized with a larger buffer to reduce ALSA underrun occurrences.
@@ -21,7 +20,7 @@ def ensure_mixer_initialized(frequency=44100, size=-16, channels=2, buffer=4096)
         except Exception as e:
             print(f"Warning: could not initialize mixer: {e}")
 
-NUMBER_OF_SAMPLE_SETS = 3
+NUMBER_OF_SAMPLE_SETS = 5
 
 class SamplePlayer(SoundPlayerBase):
     instrumentRootPath = "./Sounds/Instruments"
@@ -43,8 +42,8 @@ class SamplePlayer(SoundPlayerBase):
         # for index, sample in enumerate(self.samples):
         #     print(f"Sample {index}: {sample}")
 
-    def preload_samples():
-        self.samples = [pygame.mixer.Sound(file) for file in self.filelist]
+    # def preload_samples():
+    #     self.samples = [pygame.mixer.Sound(file) for file in self.filelist]
 
     # select next button mapping for generic buttons
     def playNext(self):
@@ -72,7 +71,7 @@ class SamplePlayer(SoundPlayerBase):
     # fire sound file
     def buttonDown(self, buttonNumber):
         print("SamplePlayer pressed generic button in online player " + str(buttonNumber))
-        self.currentFileType = 1
+        self.currentFileNum = 1
         # print("list length: " + str(len(self.filelist)))
         self.player.stop() # TODO: check if necessary
 

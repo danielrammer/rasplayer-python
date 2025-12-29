@@ -126,7 +126,7 @@ class SoundPlayerBase:
     def buttonDown(self, buttonNumber):
         print("pressed generic button " + str(buttonNumber))
         self.currentFileNum = 1
-        print("play: " + self.filelist[self.currentSong])
+        print("play: " + self.filelist[self.currentFileNum])
         # self.player.stop() # TODO: check if necessary
         self.player.play_song(self.filelist[buttonNumber])
 
