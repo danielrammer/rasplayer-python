@@ -9,8 +9,8 @@ class SoundPlayerBase:
     is_playing = False
     filelist = ""
     numberOfItemsInList = 0
-    currentFileType = 0 # TODO: this is the type (e.g. pig sound)
-    currentFile = 0     # TODO: this is the actual sound file (e.g. pig sound #2)
+    currentFileNum = -1 # TODO: this is the type (e.g. pig sound)
+    # currentFile = 0     # TODO: this is the actual sound file (e.g. pig sound #2)
 
     # input mapping to GPIO BCM
     class GenericInput(IntEnum):
@@ -27,7 +27,8 @@ class SoundPlayerBase:
               GenericInput.IN_5]
 
     def __init__(self, player, path):
-        print("SoundPlayerBase Instantiated ModeHandler")
+        # print("SoundPlayerBase Instantiated ModeHandler")
+        print("SoundPlayerBase initialized with path: " + path)
         self.player = player
         self.is_playing = False
         # self.setList(path)
@@ -60,8 +61,7 @@ class SoundPlayerBase:
 
     # TODO: make 2D array to allow more sounds per type
     def setList(self, path):
-        self.currentFileType = -1
-        self.currentFile = -1
+        self.currentFileNum = 0
         self.filelist = glob.glob(path)
         self.filelist.sort()
         self.numberOfItemsInList = len(self.filelist)
@@ -71,41 +71,53 @@ class SoundPlayerBase:
     def playSong(self, path):
         print("play song: " + str(path))
         self.player.play_song(path)
+        self.is_playing = True
 
     def playNext(self):
         # play first if list was newly selected
         # TODO: distinguish between currentFileType and currentFile in the future
-        if self.currentFileType < 0:
-            self.currentFileType = 0
+        if self.currentFileNum < 0:
+            self.currentFileNum = 0
         else:
-            self.currentFileType = (self.currentFileType + 1) % self.numberOfItemsInList
+            self.currentFileNum = (self.currentFileNum + 1) % self.numberOfItemsInList
 
-        print("play next: " + self.filelist[self.currentFileType])
-        self.player.stop() # TODO: check if necessary
-        self.player.play_song(self.filelist[self.currentFileType])
+        print("play next: " + self.filelist[self.currentFileNum])
+        # self.player.stop() # TODO: check if necessary
+        self.player.play_song(self.filelist[self.currentFileNum])
+        self.is_playing = True
 
     def playPrevious(self):
         # play first if list was newly selected
         # TODO: distinguish between currentFileType and currentFile in the future
-        if self.currentFileType < 0:
-            self.currentFileType = 0
+        if self.currentFileNum < 0:
+            self.currentFileNum = 0
         else:
-            self.currentFileType = self.currentFileType - 1
-            if self.currentFileType < 0:
-                self.currentFileType = self.numberOfItemsInList - 1
+            self.currentFileNum = self.currentFileNum - 1
+            if self.currentFileNum < 0:
+                self.currentFileNum = self.numberOfItemsInList - 1
 
-        print("play prev: " + self.filelist[self.currentFileType])
-        self.player.stop() # TODO: check if necessary
-        self.player.play_song(self.filelist[self.currentFileType])
+        print("play prev: " + self.filelist[self.currentFileNum])
+        # self.player.stop() # TODO: check if necessary
+        self.player.play_song(self.filelist[self.currentFileNum])
+        self.is_playing = True
 
     def playPausePlayer(self): 
         if self.is_playing:
             self.player.pause()
             self.is_playing = False
-        else:
-            self.player.play()
-            self.is_playing = True
 
+            print("SoundPlayer: pausing player at currentNum " + str(self.currentFileNum))
+        else:
+            print("SoundPlayer: resuming currentNum " + str(self.currentFileNum))
+            if (self.currentFileNum < 0):
+                self.currentFileNum = 0
+                print("play first song: " + self.filelist[self.currentFileNum])
+                self.player.play_song(self.filelist[self.currentFileNum])
+            else:
+                self.player.resume()
+        
+            self.is_playing = True
+            print("SoundPlayer: resuming player")
 
     def pausePlayer(self):
         self.is_playing = False
@@ -113,7 +125,7 @@ class SoundPlayerBase:
 
     def buttonDown(self, buttonNumber):
         print("pressed generic button " + str(buttonNumber))
-        self.currentFileType = 1
+        self.currentFileNum = 1
         print("play: " + self.filelist[self.currentSong])
         # self.player.stop() # TODO: check if necessary
         self.player.play_song(self.filelist[buttonNumber])
