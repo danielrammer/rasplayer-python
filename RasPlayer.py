@@ -95,13 +95,13 @@ def setVolume(vol):
 def volumeUp(channel):
     # print("vol up")
     global currentVolume
-    currentVolume = min(currentVolume + 5, 100)
+    currentVolume = min(currentVolume + 10, 100)
     setVolume(currentVolume)
 
 def volumeDown(channel):
     # print("vol down")
     global currentVolume
-    currentVolume = max(50, currentVolume - 5)
+    currentVolume = max(50, currentVolume - 10)
     setVolume(currentVolume)
 
 # TODO: set this by defined GOIO inputs (bananas)
@@ -118,11 +118,11 @@ def setPlayerMode(mode):
         soundPlayer = MusicPlayer(mpgPlayer, "./Sounds/Music/01")
         soundPlayer.setList("./Sounds/Music/01/*.mp3")
     elif playerMode == PlayerMode.ANIMALS:
-        soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Animals")
+        soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Animals", 3)
         soundPlayer.setList("./Sounds/Animals/*.mp3")
     elif playerMode == PlayerMode.INSTRUMENT:
         print("PlayerMode.INSTRUMENT active!")
-        soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Instruments")
+        soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Instruments", 5)
         # soundPlayer.setList("./Sounds/Instruments/0/*.mp3")
     elif playerMode == PlayerMode.ONLINE:
         print("PlayerMode.ONLINE active")
