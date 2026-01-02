@@ -17,10 +17,10 @@ class OnlinePlayer(SoundPlayerBase):
     radios = {
         0: "http://mp3channels.webradio.antenne.de/rockantenne",    # Rockantenne
         1: "http://mp3channels.webradio.antenne.de/80er-kulthits",  # 80er-Kulthits
-        2: "http://live-radio01.mediahubaustralia.com/DJDW/mp3",    # ABC Double J
-        3: "http://live-radio01.mediahubaustralia.com/JAZW/mp3",    # ABC Jazz
-        4: "http://live-radio02.mediahubaustralia.com/2FMW/mp3"#,    # ABC Classic
-        #5: "http://mp3channels.webradio.antenne.de/workout-hits",   # Workout Hits
+        2: "http://mp3channels.webradio.antenne.de/workout-hits",   # Workout Hits
+        3: "http://mp3channels.webradio.antenne.de/chillout",       # Chillout
+        4: "http://mp3channels.webradio.antenne.de/hitmix",         # hitmix
+        #5: "http://mp3channels.webradio.antenne.de/80er-kulthits",   # /80er-kulthits
         #6: "http://live-icy.gss.dr.dk:8000/A/A25H.mp3"              # DR P5 (Oldies)
     }
 
