@@ -28,7 +28,10 @@ class SamplePlayer(SoundPlayerBase):
 
     activeSoundFileRoot = ""
 
-    def __init__(self, player, path):
+    def __init__(self, player, path, numOfSampleSets):
+        if numOfSampleSets is not None:
+            global NUMBER_OF_SAMPLE_SETS
+            NUMBER_OF_SAMPLE_SETS = numOfSampleSets
         SoundPlayerBase.__init__(self, player, path)
         self.activeSoundFileRoot = path
         self.currentSampleSet = 0
