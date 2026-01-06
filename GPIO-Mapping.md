@@ -1,6 +1,8 @@
 | Pin | BCM | Board | Name                  |
 |-----|-----|-------|-----------------------|
 | 7   | 4   | 1     | <span style="color: brown"> INPUT_PLAY_PAUSE </span>          |
+| 8   | 14  | 22    | <span style="color: white"> reserve </span>                   |
+| 10  | 15  | 23    | <span style="color: red"> reserve </span>                     |
 | 11  | 17  | 2     | <span style="color: darkorange"> INPUT_FWD </span>            |
 | 13  | 27  | 4     | <span style="color: yellow"> INPUT_PRV </span>                |
 | 15  | 22  | 5     | <span style="color: grey"> INPUT_VOL_UP </span>               |
