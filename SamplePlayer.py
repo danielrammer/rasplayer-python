@@ -28,13 +28,18 @@ class SamplePlayer(SoundPlayerBase):
 
     activeSoundFileRoot = ""
 
-    def __init__(self, player, path, numOfSampleSets):
+    def __init__(self, player, path, numOfSampleSets, systemSounds = False):
         if numOfSampleSets is not None:
             global NUMBER_OF_SAMPLE_SETS
             NUMBER_OF_SAMPLE_SETS = numOfSampleSets
-        SoundPlayerBase.__init__(self, player, path)
+
+        # System sounds can not be played by generic buttons
+        if not systemSounds:
+            SoundPlayerBase.__init__(self, player, path)
+    
         self.activeSoundFileRoot = path
         self.currentSampleSet = 0
+
         print("SamplePlayer set list: " + f"{self.activeSoundFileRoot}/{self.currentSampleSet}/*.mp3")
         self.setList(f"{self.activeSoundFileRoot}/{self.currentSampleSet}/*.mp3")
 

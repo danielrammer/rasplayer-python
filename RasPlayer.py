@@ -19,6 +19,9 @@ from SamplePlayer import SamplePlayer
 # amixer sset 'Master' 50%
 # ----------------------------------------
 
+# System Sounds:
+# 0 - TurnOn.mp3, 1 - vol-up.mp3, 2 - vol-down.mp3
+
 def cleanup_and_exit(signum, frame):
     print("Cleaning up GPIO and exiting.")
     GPIO.cleanup()  # Cleanup GPIO
@@ -62,9 +65,6 @@ currentSong = 0
 currentVolume = 80
 playerMode = PlayerMode.MUSIC
 
-# soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Instruments")#MusicPlayer(mpgPlayer, "./Sounds/Music/02/*.mp3") # OnlinePlayer(mpgPlayer, "") 
-# soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Instruments") 
-
 # -------- GPIO setup --------
 GPIO.setup(Input.INPUT_PLAY_PAUSE, GPIO.IN)
 
@@ -87,6 +87,7 @@ GPIO.setup(Input.OUTPUT_STATUS_LED, GPIO.OUT)
 
 # other control functions
 def setVolume(vol):
+    global samplePlayer
     print("set volume to " + str(vol))
     # subprocess.call(["amixer", "-D", "default", "sset", "Master", str(vol)+"%"], stdout=subprocess.DEVNULL)
     command  = ['amixer', '-c', '0', 'sset', 'PCM',  str(vol)+'%']
@@ -95,13 +96,25 @@ def setVolume(vol):
 def volumeUp(channel):
     # print("vol up")
     global currentVolume
-    currentVolume = min(currentVolume + 10, 100)
-    setVolume(currentVolume)
+    maxVolumeReached = currentVolume >= 100
+
+    if maxVolumeReached:
+        print("VOL MAX: " + str(samplePlayer.samples[0]))
+        samplePlayer.samples[1].play()
+        sleep(0.1)
+        samplePlayer.samples[1].play()
+    else:
+        currentVolume = min(currentVolume + 10, 100)
+        setVolume(currentVolume)
+        sleep(0.05)
+        samplePlayer.samples[1].play()
+
 
 def volumeDown(channel):
     # print("vol down")
     global currentVolume
     currentVolume = max(50, currentVolume - 10)
+    samplePlayer.samples[2].play()
     setVolume(currentVolume)
 
 # TODO: set this by defined GOIO inputs (bananas)
@@ -179,7 +192,7 @@ def inputModeChange(channel):
 setVolume(currentVolume)
 
 # sound played on startup
-startupSound = "./Sounds/System/TurnOn.mp3"
+startupSound = "./Sounds/System/0/TurnOn.mp3"
 
 GPIO.output(Input.OUTPUT_STATUS_LED, 1)  # turn on status LED
 
@@ -187,6 +200,8 @@ GPIO.output(Input.OUTPUT_STATUS_LED, 1)  # turn on status LED
 
 # sleep(2)
 soundPlayer = MusicPlayer(mpgPlayer, "./Sounds/Music/00/*.mp3")
+samplePlayer = SamplePlayer(mpgPlayer, "./Sounds/System", 1, True)
+
 soundPlayer.playSong(startupSound)
 # soundPlayer.playSong("http://live-radio02.mediahubaustralia.com/2FMW/mp3")
 
