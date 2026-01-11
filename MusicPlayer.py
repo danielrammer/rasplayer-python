@@ -1,5 +1,6 @@
 #!/usr/bin/python
 from SoundPlayer import SoundPlayerBase
+from time import sleep
 import RPi.GPIO as GPIO
 
 class MusicPlayer(SoundPlayerBase):
@@ -32,6 +33,7 @@ class MusicPlayer(SoundPlayerBase):
         print("play next: " + self.filelist[self.currentFileNum])
         self.player.stop() # TODO: check if necessary
         self.player.play_song(self.filelist[self.currentFileNum])
+        self.is_playing = True
 
     # play previous song in current list
     def playPrevious(self):
@@ -48,6 +50,7 @@ class MusicPlayer(SoundPlayerBase):
         print("play prev: " + self.filelist[self.currentFileNum])
         self.player.stop() # TODO: check if necessary
         self.player.play_song(self.filelist[self.currentFileNum])
+        self.is_playing = True
 
     # select playlist with generic buttons
     def buttonDown(self, buttonNumber):
@@ -55,13 +58,16 @@ class MusicPlayer(SoundPlayerBase):
         self.player.stop()
         self.setList("./Sounds/Music/0" + str(buttonNumber) + "/*.mp3")
 
-        # print("play: " + self.filelist[self.currentSong])
-        # self.player.stop() # TODO: check if necessary
-        # self.player.play_song(self.filelist[buttonNumber])
+        self.currentFileNum = 0
 
-        self.currentFileNum = 0 #buttonNumber % len(self.filelist)
-
-        # self.setList(f"./Sounds/Music/0{songNumber}/*.mp3")
-        # self.playNext()
         self.playSong(self.filelist[self.currentFileNum])
         self.is_playing = True
+
+    def update(self):
+        super().update()
+        self.autoPlayNext()
+
+    def autoPlayNext(self):
+        if not self.player.playing_now():
+            if self.is_playing: # song ended
+                self.playNext()

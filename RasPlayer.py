@@ -222,6 +222,7 @@ GPIO.add_event_detect(Input.INPUT_INSTRUMENT_MODE, GPIO.RISING, callback=lambda 
 
 # loop until termination
 while True:
-    if soundPlayer is SamplePlayer:
-        SamplePlayer(soundPlayer).update()
-    sleep(100)
+    # if soundPlayer is SamplePlayer:
+    #     SamplePlayer(soundPlayer).update()
+    soundPlayer.update()
+    sleep(0.1)

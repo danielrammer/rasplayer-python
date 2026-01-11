@@ -140,3 +140,6 @@ class SoundPlayerBase:
 
     def is_playing_now(self):
         return self.is_playing
+    
+    def update(self):
+        pass
