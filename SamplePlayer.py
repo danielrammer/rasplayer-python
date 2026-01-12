@@ -28,14 +28,14 @@ class SamplePlayer(SoundPlayerBase):
 
     activeSoundFileRoot = ""
 
-    def __init__(self, player, path, numOfSampleSets, systemSounds = False):
+    def __init__(self, vlcInstance, player, path, numOfSampleSets, systemSounds = False):
         if numOfSampleSets is not None:
             global NUMBER_OF_SAMPLE_SETS
             NUMBER_OF_SAMPLE_SETS = numOfSampleSets
 
         # System sounds can not be played by generic buttons
         if not systemSounds:
-            SoundPlayerBase.__init__(self, player, path)
+            SoundPlayerBase.__init__(self, vlcInstance, player, path)
     
         self.activeSoundFileRoot = path
         self.currentSampleSet = 0
@@ -47,8 +47,6 @@ class SamplePlayer(SoundPlayerBase):
         ensure_mixer_initialized()
         # preload all samples for a given list
         self.samples = [pygame.mixer.Sound(file) for file in self.filelist]
-        # for index, sample in enumerate(self.samples):
-        #     print(f"Sample {index}: {sample}")
 
     # def preload_samples():
     #     self.samples = [pygame.mixer.Sound(file) for file in self.filelist]
@@ -78,7 +76,7 @@ class SamplePlayer(SoundPlayerBase):
         
     # fire sound file
     def buttonDown(self, buttonNumber):
-        print("SamplePlayer pressed generic button in online player " + str(buttonNumber))
+        print("SamplePlayer pressed generic button " + str(buttonNumber))
         self.currentFileNum = 1
         # print("list length: " + str(len(self.filelist)))
         self.player.stop() # TODO: check if necessary

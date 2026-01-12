@@ -1,20 +1,22 @@
 #!/usr/bin/python
+from asyncio import events
 from SoundPlayer import SoundPlayerBase
 from time import sleep
 import RPi.GPIO as GPIO
-from mpyg321.consts import MPyg321Events
-from mpyg321.MPyg123Player import PlayerStatus
-from mpyg321.MPyg123Player import MPyg123Player
+import vlc
+import queue
+import threading
 
 class MusicPlayer(SoundPlayerBase):
-
-
     currentSong = None
-    def __init__(self, player, path):
-        SoundPlayerBase.__init__(self, player, path)
-        print("MusicPlayer initialized with path: " + path)
-        self.setList(path)
+    _events_attached = False
 
+    def __init__(self, vlcInstance, player, path):
+        SoundPlayerBase.__init__(self, vlcInstance, player, path)
+        print("MusicPlayer initialized with path: " + path)
+        # self.setList(path)
+
+        self._actions = queue.Queue()
         # self.playNext()
 
         # maybe we do the following in the base class!
@@ -25,46 +27,50 @@ class MusicPlayer(SoundPlayerBase):
         GPIO.add_event_detect(self.GenericInput.IN_4, GPIO.RISING,  callback=lambda x : self.buttonDown(3), bouncetime=300)
         GPIO.add_event_detect(self.GenericInput.IN_5, GPIO.RISING,  callback=lambda x : self.buttonDown(4), bouncetime=300)
 
-        player.subscribe_event(MPyg321Events.MUSIC_END, self.on_song_end)
+        self._attach_events()
+
+
+    def _attach_events(self):
+        # ensure any previous end events are detached, then attach for this instance
+        events = self.player.event_manager()
+        try:
+            events.event_detach(vlc.EventType.MediaPlayerEndReached)
+        except Exception:
+            # event_detach may raise if nothing was attached; ignore
+            pass
+
+        events.event_attach(
+            vlc.EventType.MediaPlayerEndReached,
+            self._on_song_end
+        )
+
+        MusicPlayer._events_attached = True
 
     # callback when song ends
-    def on_song_end(self, context):
-        # IMPORTANT: stop first to break the event loop condition
-        # try:
-        #     self.player.stop()
-        # except Exception:
-        #     pass
-
-        
-        
-        print("MusicPlayer on_song_end - playing next")
-
-        if not self.is_playing:
-            print("MusicPlayer on_song_end - not playing")
-            return
-
-        print("PlayerStatus.PLAYING " + str(PlayerStatus.PLAYING) + " STATUS " + str(self.player.status))
-
-        # Start next track AFTER stopping
-        if self.player.status != PlayerStatus.PLAYING:
-            print("PlayerStatus.PLAYING " + str(PlayerStatus.PLAYING))
-            print("Status "+ str(self.player.status) + " - playing next")
-            self.playNext()
+    def _on_song_end(self, event):
+        print("Song ended")
+        threading.Thread(target=self.playNext, daemon=True).start()
+         #self._actions.put(self.playNext)
 
     # play next song in current list
     def playNext(self):
         print("MusicPlayer playNext song")
         # play first if list was newly selected
-        # TODO: distinguish between currentFileType and currentFile in the future
         if self.currentFileNum < 0:
             self.currentFileNum = 0
         else:
+            print("MusicPlayer currentFileNum before increment: " + str(self.currentFileNum))
             self.currentFileNum = (self.currentFileNum + 1) % self.numberOfItemsInList
+
+        print("list content: " + str(self.filelist) + " with length " + str(len(self.filelist)))
 
         self.currentSong = self.filelist[self.currentFileNum]
         print("play next: " + self.currentSong)
-        # self.player.stop() # TODO: check if necessary
-        self.player.play_song(self.currentSong)
+
+        media = self.vlcInstance.media_new(self.currentSong)
+        self.player.set_media(media)
+        self.player.play()
+
         self.is_playing = True
 
     # play previous song in current list
@@ -79,9 +85,13 @@ class MusicPlayer(SoundPlayerBase):
             if self.currentFileNum < 0:
                 self.currentFileNum = self.numberOfItemsInList - 1
 
-        print("play prev: " + self.filelist[self.currentFileNum])
-        self.player.stop() # TODO: check if necessary
-        self.player.play_song(self.filelist[self.currentFileNum])
+        self.currentSong = self.filelist[self.currentFileNum]
+        print("play prev: " + self.currentSong)
+
+        media = self.vlcInstance.media_new(self.currentSong)
+        self.player.set_media(media)
+        self.player.play()
+
         self.is_playing = True
 
     # select playlist with generic buttons
@@ -91,17 +101,15 @@ class MusicPlayer(SoundPlayerBase):
         self.setList("./Sounds/Music/0" + str(buttonNumber) + "/*.mp3")
 
         self.currentFileNum = 0
+        print("Current file num set to 0 == " + str(self.currentFileNum))
 
         self.playSong(self.filelist[self.currentFileNum])
-        self.is_playing = True
 
     def update(self):
         super().update()
-        self.autoPlayNext()
+        # self.autoPlayNext()
 
 
-    def autoPlayNext(self):
-        pass
-        # if not self.player.playing():
-        #     if self.is_playing: # song ended
-        #         self.playNext()
+    # def autoPlayNext(self):
+    #     action = self._actions.get()
+    #     action()

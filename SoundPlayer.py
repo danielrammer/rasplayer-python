@@ -2,7 +2,7 @@
 import glob
 import RPi.GPIO as GPIO
 from enum import IntEnum
-from mpyg321.MPyg123Player import MPyg123Player # or MPyg321Player if you installed mpg321
+import vlc
 
 class SoundPlayerBase:
     player = None
@@ -26,9 +26,10 @@ class SoundPlayerBase:
               GenericInput.IN_4,
               GenericInput.IN_5]
 
-    def __init__(self, player, path):
+    def __init__(self, vlcInstance, player, path):
         # print("SoundPlayerBase Instantiated ModeHandler")
         print("SoundPlayerBase initialized with path: " + path)
+        self.vlcInstance = vlcInstance
         self.player = player
         self.is_playing = False
         # self.setList(path)
@@ -38,7 +39,6 @@ class SoundPlayerBase:
         for i in self.inputs:
             GPIO.setup(i, GPIO.IN)
             GPIO.setup(i, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-            print("setup input: " + str(i) + " to IN")
 
         self.removeAllGenericGPIOEvents()
         GPIO.add_event_detect(self.GenericInput.IN_1, GPIO.RISING,  callback=lambda x : self.buttonDown(0), bouncetime=250)
@@ -49,10 +49,17 @@ class SoundPlayerBase:
 
         # GPIO.add_event_detect(self.GenericInput.IN_1, GPIO.RISING,  callback=lambda x : self.buttonDown(1), bouncetime=300)
         
-        self.pausePlayer()
+        # self.pausePlayer()
+
+    # def stopPlayer(self):
+    #     print("SoundPlayer: stopping player")
+    #     state = self.player.get_state()
+    #     if state in (vlc.State.Playing, vlc.State.Paused):
+    #         self.player.stop()
+    #         print("SoundPlayer: player stopped")
+    #     self.is_playing = False
 
     def removeAllGenericGPIOEvents(self):
-        print("removing all generic GPIO events")
         GPIO.remove_event_detect(self.GenericInput.IN_1)
         GPIO.remove_event_detect(self.GenericInput.IN_2)
         GPIO.remove_event_detect(self.GenericInput.IN_3)
@@ -70,10 +77,14 @@ class SoundPlayerBase:
 
     def playSong(self, path):
         print("play song: " + str(path))
-        self.player.play_song(path)
+
+        media = self.vlcInstance.media_new(path)
+        self.player.set_media(media)
+        self.player.play()
         self.is_playing = True
 
     def playNext(self):
+        print("SoundPlayer playNext")
         # play first if list was newly selected
         # TODO: distinguish between currentFileType and currentFile in the future
         if self.currentFileNum < 0:
@@ -81,9 +92,12 @@ class SoundPlayerBase:
         else:
             self.currentFileNum = (self.currentFileNum + 1) % self.numberOfItemsInList
 
-        print("play next: " + self.filelist[self.currentFileNum])
-        # self.player.stop() # TODO: check if necessary
-        self.player.play_song(self.filelist[self.currentFileNum])
+        self.currentSong = self.filelist[self.currentFileNum]
+        print("play next: " + self.currentSong)
+
+        media = self.vlcInstance.media_new(self.currentSong)
+        self.player.set_media(media)
+        self.player.play()
         self.is_playing = True
 
     def playPrevious(self):
@@ -96,28 +110,44 @@ class SoundPlayerBase:
             if self.currentFileNum < 0:
                 self.currentFileNum = self.numberOfItemsInList - 1
 
-        print("play prev: " + self.filelist[self.currentFileNum])
-        # self.player.stop() # TODO: check if necessary
-        self.player.play_song(self.filelist[self.currentFileNum])
+        self.currentSong = self.filelist[self.currentFileNum]
+        print("play prev: " + self.currentSong)
+
+        media = self.vlcInstance.media_new(self.currentSong)
+        self.player.set_media(media)
+        self.player.play()
         self.is_playing = True
 
     def playPausePlayer(self): 
-        if self.is_playing:
+        state = self.player.get_state()
+        if state == vlc.State.Playing:
             self.player.pause()
-            self.is_playing = False
-
-            print("SoundPlayer: pausing player at currentNum " + str(self.currentFileNum))
-        else:
-            print("SoundPlayer: resuming currentNum " + str(self.currentFileNum))
-            if (self.currentFileNum < 0):
-                self.currentFileNum = 0
-                print("play first song: " + self.filelist[self.currentFileNum])
-                self.player.play_song(self.filelist[self.currentFileNum])
-            else:
-                self.player.resume()
+        elif state == vlc.State.Paused:
+            self.player.play()
         
-            self.is_playing = True
-            print("SoundPlayer: resuming player")
+        
+        # if self.is_playing:
+        #     self.player.pause()
+        #     self.is_playing = False
+
+        #     print("SoundPlayer: pausing player at currentNum " + str(self.currentFileNum))
+        # else:
+        #     print("SoundPlayer: resuming currentNum " + str(self.currentFileNum))
+        #     if (self.currentFileNum < 0):
+        #         self.currentFileNum = 0
+         
+        #         self.currentSong = self.filelist[self.currentFileNum]
+
+        #         print("play first song: " + self.currentSong)
+
+        #         media = self.vlcInstance.media_new(self.currentSong)
+        #         self.player.set_media(media)
+        #         self.player.play()
+        #     else:
+        #         self.player.play()
+        
+        #     self.is_playing = True
+        #     print("SoundPlayer: resuming player")
 
     def pausePlayer(self):
         self.is_playing = False
@@ -125,18 +155,13 @@ class SoundPlayerBase:
 
     def buttonDown(self, buttonNumber):
         print("pressed generic button " + str(buttonNumber))
-        self.currentFileNum = 1
-        print("play: " + self.filelist[self.currentFileNum])
-        # self.player.stop() # TODO: check if necessary
-        self.player.play_song(self.filelist[buttonNumber])
+        self.currentFileNum = 0
+        print("play: " + self.filelist[buttonNumber])
 
-    def on_playback_started(self):
-        print("Playback started")
+        media = self.vlcInstance.media_new(self.filelist[buttonNumber])
+        self.player.set_media(media)
+        self.player.play()
         self.is_playing = True
-
-    def on_playback_finished(self):
-        print("Playback finished")
-        self.is_playing = False
 
     def is_playing_now(self):
         return self.is_playing

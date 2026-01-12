@@ -4,7 +4,7 @@ import subprocess
 import RPi.GPIO as GPIO
 from time import sleep
 from enum import IntEnum
-from mpyg321.MPyg123Player import MPyg123Player # or MPyg321Player if you installed mpg321
+import vlc
 import signal
 import sys
 
@@ -59,7 +59,10 @@ class Input(IntEnum):
     OUTPUT_STATUS_LED = 26
 
     NONE = 1337
-mpgPlayer = MPyg123Player()
+
+vlcInstance = vlc.Instance("--aout=alsa") #vlc.Instance()
+vlcPlayer = vlcInstance.media_player_new()
+
 filelist = ""
 currentSong = 0
 currentVolume = 80
@@ -121,28 +124,38 @@ def volumeDown(channel):
 def setPlayerMode(mode):
     global playerMode
     global soundPlayer
+    global vlcInstance
 
     if (playerMode == mode):
         print("setPlayerMode: already in mode " + str(mode))
         return
     
+
+    if soundPlayer is not None:
+        print("SoundPlayer: stopping player")
+        state = soundPlayer.player.get_state()
+        # if state in (vlc.State.Playing, vlc.State.Paused):
+        soundPlayer.player.stop()
+        print("SoundPlayer: player stopped")
+        soundPlayer.is_playing = False
+        sleep(0.2)
+
     playerMode = mode
     if playerMode == PlayerMode.MUSIC:
-        soundPlayer = MusicPlayer(mpgPlayer, "./Sounds/Music/01")
+        soundPlayer = MusicPlayer(vlcInstance,vlcPlayer, "./Sounds/Music/01")
         soundPlayer.setList("./Sounds/Music/01/*.mp3")
     elif playerMode == PlayerMode.ANIMALS:
-        soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Animals", 3)
-        soundPlayer.setList("./Sounds/Animals/*.mp3")
+        soundPlayer = SamplePlayer(vlcInstance, vlcPlayer, "./Sounds/Animals", 3)
+        # soundPlayer.setList("./Sounds/Animals/*.mp3")
     elif playerMode == PlayerMode.INSTRUMENT:
         print("PlayerMode.INSTRUMENT active!")
-        soundPlayer = SamplePlayer(mpgPlayer, "./Sounds/Instruments", 5)
+        soundPlayer = SamplePlayer(vlcInstance, vlcPlayer, "./Sounds/Instruments", 5)
         # soundPlayer.setList("./Sounds/Instruments/0/*.mp3")
     elif playerMode == PlayerMode.ONLINE:
         print("PlayerMode.ONLINE active")
-        soundPlayer = OnlinePlayer(mpgPlayer, "")
-
+        soundPlayer = OnlinePlayer(vlcInstance, vlcPlayer, "")
     else:
-        soundPlayer.setList("./Sounds/Music/01*.mp3")
+        soundPlayer.setList("./Sounds/Music/00*.mp3")
 
 def nextPlayerMode():
     global playerMode
@@ -192,17 +205,17 @@ def inputModeChange(channel):
 setVolume(currentVolume)
 
 # sound played on startup
-startupSound = "./Sounds/System/0/TurnOn.mp3"
+# startupSound = "./Sounds/System/0/TurnOn.mp3"
 
 GPIO.output(Input.OUTPUT_STATUS_LED, 1)  # turn on status LED
 
 # play startup sound
 
 # sleep(2)
-soundPlayer = MusicPlayer(mpgPlayer, "./Sounds/Music/00/*.mp3")
-samplePlayer = SamplePlayer(mpgPlayer, "./Sounds/System", 1, True)
+soundPlayer = MusicPlayer(vlcInstance, vlcPlayer, "./Sounds/Music/00/*.mp3")
+samplePlayer = SamplePlayer(vlcInstance, vlcPlayer, "./Sounds/System", 1, True)
 
-soundPlayer.playSong(startupSound)
+samplePlayer.samples[0].play()
 # soundPlayer.playSong("http://live-radio02.mediahubaustralia.com/2FMW/mp3")
 
 
