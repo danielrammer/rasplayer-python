@@ -32,7 +32,7 @@ class OnlinePlayer(SoundPlayerBase):
     def buttonDown(self, buttonNumber):
         print("OnlinePlayer pressed generic button in online player " + str(buttonNumber))
         self.currentRadio = buttonNumber
-        print("OnlinePlayer play" + self.radios[self.currentRadio])
+        print("OnlinePlayer play " + self.radios[self.currentRadio])
         # self.player.stop() # TODO: check if necessary
 
         media = self.vlcInstance.media_new(self.radios[self.currentRadio])
