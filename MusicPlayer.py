@@ -2,9 +2,14 @@
 from SoundPlayer import SoundPlayerBase
 from time import sleep
 import RPi.GPIO as GPIO
+from mpyg321.consts import MPyg321Events
+from mpyg321.MPyg123Player import PlayerStatus
+from mpyg321.MPyg123Player import MPyg123Player
 
 class MusicPlayer(SoundPlayerBase):
 
+
+    currentSong = None
     def __init__(self, player, path):
         SoundPlayerBase.__init__(self, player, path)
         print("MusicPlayer initialized with path: " + path)
@@ -20,6 +25,32 @@ class MusicPlayer(SoundPlayerBase):
         GPIO.add_event_detect(self.GenericInput.IN_4, GPIO.RISING,  callback=lambda x : self.buttonDown(3), bouncetime=300)
         GPIO.add_event_detect(self.GenericInput.IN_5, GPIO.RISING,  callback=lambda x : self.buttonDown(4), bouncetime=300)
 
+        player.subscribe_event(MPyg321Events.MUSIC_END, self.on_song_end)
+
+    # callback when song ends
+    def on_song_end(self, context):
+        # IMPORTANT: stop first to break the event loop condition
+        # try:
+        #     self.player.stop()
+        # except Exception:
+        #     pass
+
+        
+        
+        print("MusicPlayer on_song_end - playing next")
+
+        if not self.is_playing:
+            print("MusicPlayer on_song_end - not playing")
+            return
+
+        print("PlayerStatus.PLAYING " + str(PlayerStatus.PLAYING) + " STATUS " + str(self.player.status))
+
+        # Start next track AFTER stopping
+        if self.player.status != PlayerStatus.PLAYING:
+            print("PlayerStatus.PLAYING " + str(PlayerStatus.PLAYING))
+            print("Status "+ str(self.player.status) + " - playing next")
+            self.playNext()
+
     # play next song in current list
     def playNext(self):
         print("MusicPlayer playNext song")
@@ -30,9 +61,10 @@ class MusicPlayer(SoundPlayerBase):
         else:
             self.currentFileNum = (self.currentFileNum + 1) % self.numberOfItemsInList
 
-        print("play next: " + self.filelist[self.currentFileNum])
-        self.player.stop() # TODO: check if necessary
-        self.player.play_song(self.filelist[self.currentFileNum])
+        self.currentSong = self.filelist[self.currentFileNum]
+        print("play next: " + self.currentSong)
+        # self.player.stop() # TODO: check if necessary
+        self.player.play_song(self.currentSong)
         self.is_playing = True
 
     # play previous song in current list
@@ -67,7 +99,9 @@ class MusicPlayer(SoundPlayerBase):
         super().update()
         self.autoPlayNext()
 
+
     def autoPlayNext(self):
-        if not self.player.playing_now():
-            if self.is_playing: # song ended
-                self.playNext()
+        pass
+        # if not self.player.playing():
+        #     if self.is_playing: # song ended
+        #         self.playNext()
