@@ -1,4 +1,5 @@
 #!/usr/bin/python
+from time import sleep
 from SoundPlayer import SoundPlayerBase
 import RPi.GPIO as GPIO
 
@@ -13,7 +14,8 @@ class OnlinePlayer(SoundPlayerBase):
         # GPIO.add_event_detect(self.GenericInput.IN_4, GPIO.RISING,  callback=lambda x : self.buttonDown(4), bouncetime=300)
         # GPIO.add_event_detect(self.GenericInput.IN_5, GPIO.RISING,  callback=lambda x : self.buttonDown(5), bouncetime=300)
         
-        # self.playNext()
+        sleep(1)
+        self.playNext()
 
 
     radios = {

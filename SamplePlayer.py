@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+from time import sleep
 from SoundPlayer import SoundPlayerBase
 from enum import IntEnum
 import glob
@@ -47,7 +48,17 @@ class SamplePlayer(SoundPlayerBase):
         ensure_mixer_initialized()
         # preload all samples for a given list
         self.samples = [pygame.mixer.Sound(file) for file in self.filelist]
-
+        
+        if not systemSounds:
+            self.samples[0].play()
+            sleep(0.35)
+            self.samples[1].play()
+            sleep(0.2)
+            self.samples[0].play()
+            sleep(0.325)
+            self.samples[0].play()
+            sleep(0.2)
+            self.samples[1].play()
     # def preload_samples():
     #     self.samples = [pygame.mixer.Sound(file) for file in self.filelist]
 

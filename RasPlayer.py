@@ -66,7 +66,8 @@ vlcPlayer = vlcInstance.media_player_new()
 filelist = ""
 currentSong = 0
 currentVolume = 80
-playerMode = PlayerMode.MUSIC
+soundPlayer = None
+playerMode = PlayerMode.NONE
 
 # -------- GPIO setup --------
 GPIO.setup(Input.INPUT_PLAY_PAUSE, GPIO.IN)
@@ -77,17 +78,14 @@ GPIO.setup(Input.INPUT_PRV, GPIO.IN)
 GPIO.setup(Input.INPUT_VOL_UP, GPIO.IN)
 GPIO.setup(Input.INPUT_VOL_DOWN, GPIO.IN)
 
-GPIO.setup(Input.INPUT_MUSIC_MODE, GPIO.IN)       # TODO: banana
-GPIO.setup(Input.INPUT_ONLINE_MODE, GPIO.IN)      # TODO: banana
-GPIO.setup(Input.INPUT_ANIMAL_MODE, GPIO.IN)      # TODO: banana
-GPIO.setup(Input.INPUT_INSTRUMENT_MODE, GPIO.IN)  # TODO: banana
+GPIO.setup(Input.INPUT_MUSIC_MODE, GPIO.IN)
+GPIO.setup(Input.INPUT_ONLINE_MODE, GPIO.IN)
+GPIO.setup(Input.INPUT_ANIMAL_MODE, GPIO.IN)
+GPIO.setup(Input.INPUT_INSTRUMENT_MODE, GPIO.IN)
 
 GPIO.setup(Input.OUTPUT_STATUS_LED, GPIO.OUT)
-# GPIO.setup(Input.INPUT_MODE_CHG, GPIO.IN)         # TODO: will be replaced by defined banana
-
 
 # -------- function definitions --------
-
 # other control functions
 def setVolume(vol):
     global samplePlayer
@@ -142,8 +140,8 @@ def setPlayerMode(mode):
 
     playerMode = mode
     if playerMode == PlayerMode.MUSIC:
-        soundPlayer = MusicPlayer(vlcInstance,vlcPlayer, "./Sounds/Music/01")
-        soundPlayer.setList("./Sounds/Music/01/*.mp3")
+        soundPlayer = MusicPlayer(vlcInstance, vlcPlayer, "./Sounds/Music/02")
+        # soundPlayer.setList("./Sounds/Music/01/*.mp3")
     elif playerMode == PlayerMode.ANIMALS:
         soundPlayer = SamplePlayer(vlcInstance, vlcPlayer, "./Sounds/Animals", 3)
         # soundPlayer.setList("./Sounds/Animals/*.mp3")
@@ -212,7 +210,7 @@ GPIO.output(Input.OUTPUT_STATUS_LED, 1)  # turn on status LED
 # play startup sound
 
 # sleep(2)
-soundPlayer = MusicPlayer(vlcInstance, vlcPlayer, "./Sounds/Music/00/*.mp3")
+# soundPlayer = MusicPlayer(vlcInstance, vlcPlayer, "./Sounds/Music/00/*.mp3")
 samplePlayer = SamplePlayer(vlcInstance, vlcPlayer, "./Sounds/System", 1, True)
 
 samplePlayer.samples[0].play()
@@ -235,7 +233,6 @@ GPIO.add_event_detect(Input.INPUT_INSTRUMENT_MODE, GPIO.RISING, callback=lambda 
 
 # loop until termination
 while True:
-    # if soundPlayer is SamplePlayer:
-    #     SamplePlayer(soundPlayer).update()
-    soundPlayer.update()
+    # if soundPlayer is not None:
+    #     soundPlayer.update()
     sleep(0.1)

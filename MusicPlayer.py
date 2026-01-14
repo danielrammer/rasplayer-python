@@ -17,7 +17,9 @@ class MusicPlayer(SoundPlayerBase):
         # self.setList(path)
 
         self._actions = queue.Queue()
-        # self.playNext()
+
+        self.player.stop()
+        self.setList("./Sounds/Music/0" + str(1) + "/*.mp3")
 
         # maybe we do the following in the base class!
         self.removeAllGenericGPIOEvents()
@@ -28,6 +30,9 @@ class MusicPlayer(SoundPlayerBase):
         GPIO.add_event_detect(self.GenericInput.IN_5, GPIO.RISING,  callback=lambda x : self.buttonDown(4), bouncetime=400)
 
         self._attach_events()
+
+        sleep(1)
+        self.playSongNumber(0)
 
 
     def _attach_events(self):
@@ -87,6 +92,22 @@ class MusicPlayer(SoundPlayerBase):
 
         self.currentSong = self.filelist[self.currentFileNum]
         print("play prev: " + self.currentSong)
+
+        media = self.vlcInstance.media_new(self.currentSong)
+        self.player.set_media(media)
+        self.player.play()
+
+        self.is_playing = True
+
+    def playSongNumber(self, number):
+        print("MusicPlayer playSongNumber: " + str(number))
+        if number < 0 or number >= self.numberOfItemsInList:
+            print("MusicPlayer playSongNumber: number out of range, resetting to 0")
+            number = 0
+            
+        self.currentFileNum = number
+        self.currentSong = self.filelist[self.currentFileNum]
+        print("play song: " + self.currentSong)
 
         media = self.vlcInstance.media_new(self.currentSong)
         self.player.set_media(media)
