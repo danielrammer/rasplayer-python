@@ -93,7 +93,7 @@ GPIO.setup(Input.INPUT_INSTRUMENT_MODE, GPIO.IN)
 GPIO.setup(Input.OUTPUT_STATUS_LED, GPIO.OUT)
 
 GPIO.setup(Input.INPUT_SONIC_TRIGGER, GPIO.OUT)
-GPIO.setup(Input.INPUT_SONIC_ECHO, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(Input.INPUT_SONIC_ECHO, GPIO.IN)
 
 # -------- function definitions --------
 # other control functions
@@ -151,6 +151,7 @@ def get_distance():
     
     time_elapsed = stop_time - start_time
     distance = (time_elapsed * 34300) / 2
+    # print(f"Distance calculated: {distance:.2f} cm")
     return distance
 
 # TODO: set this by defined GOIO inputs (bananas)
@@ -275,10 +276,10 @@ GPIO.add_event_detect(Input.INPUT_SYNTH_MODE, GPIO.RISING, callback=lambda x : s
 
 # loop until termination
 while True:
-    distance_counter += 1
-    if distance_counter % 10 == 0:
-        distance = get_distance()
-        print(f"Distance: {distance:.2f} cm")
+    # distance_counter += 1
+    # if distance_counter % 10 == 0:
+    #     distance = get_distance()
+        # print(f"Distance: {distance:.2f} cm")
 
     # if soundPlayer is not None:
     #     soundPlayer.update()

@@ -9,6 +9,14 @@ class SynthPlayer:
         self.frequency = 440  # Default A4
         self.waveform = 0  # 0: sine, 1: square, 2: saw, 3: triangle
         self.get_distance = get_distance_func
+        self.button_held = False  # Track if any generic button is held
+        self.in_range = False  # Track if distance is within frequency mapping range
+
+        # Frequency mapping parameters
+        self.min_freq = 100
+        self.max_freq = 1000
+        self.min_distance = 5  # Minimum distance in cm for frequency mapping
+        self.max_distance = 15  # Maximum distance in cm for frequency mapping
 
         self.p = pyaudio.PyAudio()
         self.stream = self.p.open(format=pyaudio.paFloat32,
@@ -33,22 +41,38 @@ class SynthPlayer:
         # Update frequency based on distance
         distance = self.get_distance()
         if distance > 0:
-            self.frequency = np.clip(200 + (distance - 10) * 20, 100, 2000)  # Map 10cm=200Hz to 100cm=2000Hz
+            if distance < self.min_distance:
+                self.frequency = self.min_freq
+            elif distance > self.max_distance:
+                self.frequency = self.max_freq
+            else:
+                # Linear mapping from min_distance to max_distance
+                dist_ratio = (distance - self.min_distance) / (self.max_distance - self.min_distance)
+                self.frequency = self.min_freq + dist_ratio * (self.max_freq - self.min_freq)
+            self.in_range = True  # Always play when distance > 0
         else:
-            self.frequency = 440  # Default if no distance
+            self.frequency = 220  # Default if no distance
+            self.in_range = False  # Don't play if no valid distance
+
+        print(f"Distance: {distance:.2f} cm, Frequency: {self.frequency:.2f} Hz, In range: {self.in_range}")
+        # Check if any generic button is held down
+        self.button_held = any(GPIO.input(pin) for pin in self.generic_inputs)
 
     def callback(self, in_data, frame_count, time_info, status):
-        t = np.linspace(0, frame_count / 44100, frame_count, False)
-        if self.waveform == 0:  # Sine
-            data = np.sin(2 * np.pi * self.frequency * t)
-        elif self.waveform == 1:  # Square
-            data = np.sign(np.sin(2 * np.pi * self.frequency * t))
-        elif self.waveform == 2:  # Sawtooth
-            data = 2 * (t * self.frequency - np.floor(t * self.frequency + 0.5))
-        elif self.waveform == 3:  # Triangle
-            data = 2 * np.abs(2 * (t * self.frequency - np.floor(t * self.frequency + 0.5))) - 1
+        if not (self.button_held and self.in_range):
+            data = np.zeros(frame_count, dtype=np.float32)
         else:
-            data = np.random.uniform(-1, 1, frame_count)  # Noise
+            t = np.linspace(0, frame_count / 44100, frame_count, False)
+            if self.waveform == 0:  # Sine
+                data = np.sin(2 * np.pi * self.frequency * t)
+            elif self.waveform == 1:  # Square
+                data = np.sign(np.sin(2 * np.pi * self.frequency * t))
+            elif self.waveform == 2:  # Sawtooth
+                data = 2 * (t * self.frequency - np.floor(t * self.frequency + 0.5))
+            elif self.waveform == 3:  # Triangle
+                data = 2 * np.abs(2 * (t * self.frequency - np.floor(t * self.frequency + 0.5))) - 1
+            else:
+                data = np.random.uniform(-1, 1, frame_count)  # Noise
         return (data.astype(np.float32), pyaudio.paContinue)
 
     def stop(self):
