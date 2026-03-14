@@ -16,7 +16,8 @@ class SynthPlayer:
         self.min_freq = 100
         self.max_freq = 1000
         self.min_distance = 5  # Minimum distance in cm for frequency mapping
-        self.max_distance = 15  # Maximum distance in cm for frequency mapping
+        self.max_distance = 17  # Maximum distance in cm for frequency mapping
+        self.whole_tone_ratio = 2 ** (1 / 6)  # Ratio for one whole tone (2 half-tones)
 
         self.p = pyaudio.PyAudio()
         self.stream = self.p.open(format=pyaudio.paFloat32,
@@ -40,21 +41,21 @@ class SynthPlayer:
     def update(self):
         # Update frequency based on distance
         distance = self.get_distance()
+        step = 0  # Default
         if distance > 0:
             if distance < self.min_distance:
-                self.frequency = self.min_freq
+                step = 0
             elif distance > self.max_distance:
-                self.frequency = self.max_freq
+                step = 5  # 5 half-tones for the 10cm range (5 steps of 2cm each)
             else:
-                # Linear mapping from min_distance to max_distance
-                dist_ratio = (distance - self.min_distance) / (self.max_distance - self.min_distance)
-                self.frequency = self.min_freq + dist_ratio * (self.max_freq - self.min_freq)
+                step = int((distance - self.min_distance) // 2)
+            self.frequency = self.min_freq * (self.whole_tone_ratio ** step)
             self.in_range = True  # Always play when distance > 0
         else:
             self.frequency = 220  # Default if no distance
             self.in_range = False  # Don't play if no valid distance
 
-        print(f"Distance: {distance:.2f} cm, Frequency: {self.frequency:.2f} Hz, In range: {self.in_range}")
+        print(f"Distance: {distance:.2f} cm, Step: {step}, Frequency: {self.frequency:.2f} Hz, In range: {self.in_range}")
         # Check if any generic button is held down
         self.button_held = any(GPIO.input(pin) for pin in self.generic_inputs)
 

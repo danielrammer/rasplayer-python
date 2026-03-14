@@ -93,7 +93,7 @@ GPIO.setup(Input.INPUT_INSTRUMENT_MODE, GPIO.IN)
 GPIO.setup(Input.OUTPUT_STATUS_LED, GPIO.OUT)
 
 GPIO.setup(Input.INPUT_SONIC_TRIGGER, GPIO.OUT)
-GPIO.setup(Input.INPUT_SONIC_ECHO, GPIO.IN)
+GPIO.setup(Input.INPUT_SONIC_ECHO, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 # -------- function definitions --------
 # other control functions
@@ -151,7 +151,6 @@ def get_distance():
     
     time_elapsed = stop_time - start_time
     distance = (time_elapsed * 34300) / 2
-    # print(f"Distance calculated: {distance:.2f} cm")
     return distance
 
 # TODO: set this by defined GOIO inputs (bananas)
