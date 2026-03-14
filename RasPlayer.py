@@ -2,6 +2,7 @@
 import glob
 import subprocess
 import RPi.GPIO as GPIO
+import time
 from time import sleep
 from enum import IntEnum
 import vlc
@@ -12,6 +13,7 @@ from SoundPlayer import SoundPlayerBase
 from MusicPlayer import MusicPlayer
 from OnlinePlayer import OnlinePlayer
 from SamplePlayer import SamplePlayer
+from SynthPlayer import SynthPlayer
 
 ## -------- HOW TO RUN THAT STUFF --------
 # RUN: xvfb-run python RasPlayer.py
@@ -41,12 +43,15 @@ class PlayerMode(IntEnum):
     ANIMALS = 1
     INSTRUMENT = 2
     ONLINE = 3
-    NONE = 4
+    SYNTH = 4
+    NONE = 5
 
 # these inputs are global - work for all modes
 # maybe fwd and prv are not available for all
 class Input(IntEnum):
     INPUT_PLAY_PAUSE = 4
+    INPUT_SONIC_TRIGGER = 14
+    INPUT_SONIC_ECHO = 15
     INPUT_FWD = 17
     INPUT_PRV = 27
     # INPUT_MODE_CHG = 27 # will be wire (banana)
@@ -54,9 +59,10 @@ class Input(IntEnum):
     INPUT_VOL_DOWN = 23
     INPUT_MUSIC_MODE = 24
     INPUT_ONLINE_MODE = 10
-    INPUT_ANIMAL_MODE = 9
+    # INPUT_ANIMAL_MODE = 9
     INPUT_INSTRUMENT_MODE = 25
     OUTPUT_STATUS_LED = 26
+    INPUT_SYNTH_MODE = 9
 
     NONE = 1337
 
@@ -68,6 +74,7 @@ currentSong = 0
 currentVolume = 80
 soundPlayer = None
 playerMode = PlayerMode.NONE
+distance_counter = 0
 
 # -------- GPIO setup --------
 GPIO.setup(Input.INPUT_PLAY_PAUSE, GPIO.IN)
@@ -80,10 +87,13 @@ GPIO.setup(Input.INPUT_VOL_DOWN, GPIO.IN)
 
 GPIO.setup(Input.INPUT_MUSIC_MODE, GPIO.IN)
 GPIO.setup(Input.INPUT_ONLINE_MODE, GPIO.IN)
-GPIO.setup(Input.INPUT_ANIMAL_MODE, GPIO.IN)
+# GPIO.setup(Input.INPUT_ANIMAL_MODE, GPIO.IN)
 GPIO.setup(Input.INPUT_INSTRUMENT_MODE, GPIO.IN)
 
 GPIO.setup(Input.OUTPUT_STATUS_LED, GPIO.OUT)
+
+GPIO.setup(Input.INPUT_SONIC_TRIGGER, GPIO.OUT)
+GPIO.setup(Input.INPUT_SONIC_ECHO, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 # -------- function definitions --------
 # other control functions
@@ -117,6 +127,31 @@ def volumeDown(channel):
     currentVolume = max(50, currentVolume - 10)
     samplePlayer.samples[2].play()
     setVolume(currentVolume)
+
+def get_distance():
+    GPIO.output(Input.INPUT_SONIC_TRIGGER, True)
+    time.sleep(0.00001)
+    GPIO.output(Input.INPUT_SONIC_TRIGGER, False)
+    
+    timeout_start = time.time()
+    while GPIO.input(Input.INPUT_SONIC_ECHO) == 0 and (time.time() - timeout_start) < 0.1:
+        pass
+    if GPIO.input(Input.INPUT_SONIC_ECHO) == 0:
+        return -1  # Timeout waiting for echo start
+    
+    start_time = time.time()
+    
+    timeout_start = time.time()
+    while GPIO.input(Input.INPUT_SONIC_ECHO) == 1 and (time.time() - timeout_start) < 0.1:
+        pass
+    if GPIO.input(Input.INPUT_SONIC_ECHO) == 1:
+        return -1  # Timeout waiting for echo end
+    
+    stop_time = time.time()
+    
+    time_elapsed = stop_time - start_time
+    distance = (time_elapsed * 34300) / 2
+    return distance
 
 # TODO: set this by defined GOIO inputs (bananas)
 def setPlayerMode(mode):
@@ -152,6 +187,9 @@ def setPlayerMode(mode):
     elif playerMode == PlayerMode.ONLINE:
         print("PlayerMode.ONLINE active")
         soundPlayer = OnlinePlayer(vlcInstance, vlcPlayer, "")
+    elif playerMode == PlayerMode.SYNTH:
+        print("PlayerMode.SYNTH active")
+        soundPlayer = SynthPlayer(vlcInstance, vlcPlayer, "", get_distance)
     else:
         soundPlayer.setList("./Sounds/Music/00*.mp3")
 
@@ -170,9 +208,11 @@ GPIO.setup(Input.INPUT_VOL_UP, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 GPIO.setup(Input.INPUT_VOL_DOWN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 GPIO.setup(Input.INPUT_MUSIC_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-GPIO.setup(Input.INPUT_ANIMAL_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+# GPIO.setup(Input.INPUT_ANIMAL_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 GPIO.setup(Input.INPUT_INSTRUMENT_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 GPIO.setup(Input.INPUT_ONLINE_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
+GPIO.setup(Input.INPUT_SYNTH_MODE, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 # GPIO.setup(Input.INPUT_MODE_CHG, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
@@ -228,11 +268,21 @@ GPIO.add_event_detect(Input.INPUT_VOL_DOWN, GPIO.RISING, callback=volumeDown, bo
 
 GPIO.add_event_detect(Input.INPUT_MUSIC_MODE, GPIO.RISING, callback=lambda x : setPlayerMode(PlayerMode.MUSIC), bouncetime=1000)
 GPIO.add_event_detect(Input.INPUT_ONLINE_MODE, GPIO.RISING, callback=lambda x : setPlayerMode(PlayerMode.ONLINE), bouncetime=1000)
-GPIO.add_event_detect(Input.INPUT_ANIMAL_MODE, GPIO.RISING, callback=lambda x :setPlayerMode(PlayerMode.ANIMALS), bouncetime=1000)
+# GPIO.add_event_detect(Input.INPUT_ANIMAL_MODE, GPIO.RISING, callback=lambda x :setPlayerMode(PlayerMode.ANIMALS), bouncetime=1000)
 GPIO.add_event_detect(Input.INPUT_INSTRUMENT_MODE, GPIO.RISING, callback=lambda x :setPlayerMode(PlayerMode.INSTRUMENT), bouncetime=1000)
+
+GPIO.add_event_detect(Input.INPUT_SYNTH_MODE, GPIO.RISING, callback=lambda x : setPlayerMode(PlayerMode.SYNTH), bouncetime=1000)
 
 # loop until termination
 while True:
+    distance_counter += 1
+    if distance_counter % 10 == 0:
+        distance = get_distance()
+        print(f"Distance: {distance:.2f} cm")
+
     # if soundPlayer is not None:
     #     soundPlayer.update()
-    sleep(0.1)
+    if soundPlayer is not None and hasattr(soundPlayer, 'update'):
+        soundPlayer.update()
+    # print("main loop: playerMode " + str(playerMode))
+    sleep(0.05)

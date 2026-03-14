@@ -9,7 +9,7 @@
 | 16  | 23  | 7     | <span style="color: violet"> INPUT_VOL_DOWN </span>           |
 | 18  | 24  | 8     | <span style="color: green"> INPUT_MUSIC_MODE </span>          |
 | 19  | 10  | 10    | <span style="color: blue"> INPUT_ONLINE_MODE </span>          |
-| 21  | 9   | 11    | <span style="color: darkorange"> INPUT_ANIMAL_MODE </span>    |
+| 21  | 9   | 11    | <span style="color: darkorange"> INPUT_SYNTH_MODE/INPUT_ANIMAL_MODE </span>    |
 | 22  | 25  | 13    | <span style="color: brown"> INPUT_INSTRUMENT_MODE </span>     |
 | 23  | 11  | 14    | <span style="color: yellow"> GenericInput.IN_1 </span>        |
 | 29  | 5   | 16    | <span style="color: violet"> GenericInput.IN_2 </span>        |
