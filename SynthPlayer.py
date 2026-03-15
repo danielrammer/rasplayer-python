@@ -1,84 +1,106 @@
 import RPi.GPIO as GPIO
 from SoundPlayer import SoundPlayerBase
-import pyaudio
 import numpy as np
+import fluidsynth
 
 
 class SynthPlayer(SoundPlayerBase):
+
     def __init__(self, vlcInstance, player, path, get_distance_func):
-                # System sounds can not be played by generic buttons
+
         SoundPlayerBase.__init__(self, vlcInstance, player, path)
 
-        self.vlcInstance = vlcInstance
-        self.player = player
-        self.path = path
-        self.is_playing = True  # Always playing for synth
-        self.frequency = 440  # Default A4
-        self.waveform = 0  # 0: sine, 1: square, 2: saw, 3: triangle
         self.get_distance = get_distance_func
-        self.button_held = False  # Track if any generic button is held
-        self.in_range = False  # Track if distance is within frequency mapping range
 
-        # Frequency mapping parameters
-        self.min_freq = 130 # C3
+        self.is_playing = True
+        self.frequency = 440
+        self.current_note = None
+
+        # Frequency mapping
+        self.min_freq = 130
         self.max_freq = 1000
-        self.min_distance = 5  # Minimum distance in cm for frequency mapping
-        self.max_distance = 35  # Maximum distance in cm for frequency mapping
-        self.half_tone_ratio = 2 ** (1 / 12) 
-        self.last_valid_distance = self.min_distance 
+        self.min_distance = 5
+        self.max_distance = 35
+        self.half_tone_ratio = 2 ** (1/12)
+        self.last_valid_distance = self.min_distance
 
-        self.p = pyaudio.PyAudio()
-        self.stream = self.p.open(format=pyaudio.paFloat32,
-                                  channels=1,
-                                  rate=44100,
-                                  output=True,
-                                  stream_callback=self.callback)
-        self.stream.start_stream()
+        # Button pins
+        self.generic_inputs = [11,5,6,19,16]
 
-        # Setup generic inputs for waveform selection
-        self.generic_inputs = [11, 5, 6, 19, 16]  # BCM pins
-        # for pin in self.generic_inputs:
-        #     GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-        #     GPIO.add_event_detect(pin, GPIO.RISING, callback=self.buttonDown, bouncetime=200)
+        # --- FluidSynth setup ---
+        self.fs = fluidsynth.Synth()
+        self.fs.start(driver="alsa")
 
-    def buttonDown(self, buttonNumber):
-        # index = self.generic_inputs.index(channel)
-        self.waveform = buttonNumber % 4  # Cycle through 4 waveforms
-        print(f"Waveform changed to {self.waveform}")
+        soundfont = "/usr/share/sounds/sf2/FluidR3_GM.sf2"
+        self.sfid = self.fs.sfload(soundfont)
+
+        # channel, sfid, bank, preset
+        self.instrument = 81  # synth lead
+        self.fs.program_select(0, self.sfid, 0, self.instrument)
+
+        self.button_held = False
+        self.in_range = False
+
+    # --------------------------------------------------
+
+    def freq_to_midi(self, freq):
+        return int(69 + 12 * np.log2(freq / 440.0))
+
+    # --------------------------------------------------
 
     def update(self):
-        # Update frequency based on distance
+
         distance = self.get_distance()
+
         if distance > 0 and self.min_distance <= distance <= self.max_distance:
             self.last_valid_distance = distance
-        # Always use last_valid_distance for frequency
+
         step = int((self.last_valid_distance - self.min_distance) // 2)
         self.frequency = self.min_freq * (self.half_tone_ratio ** step)
+
         self.in_range = distance > 0
 
-        print(f"D: {distance:.2f} cm, Last Valid: {self.last_valid_distance:.2f} cm, Step: {step}, F: {self.frequency:.2f} Hz, In range: {self.in_range}")
-        # Check if any generic button is held down
+        # print(
+        #     f"D:{distance:.2f}cm Last:{self.last_valid_distance:.2f} "
+        #     f"Step:{step} F:{self.frequency:.2f}"
+        # )
+
         self.button_held = any(GPIO.input(pin) for pin in self.generic_inputs)
 
-    def callback(self, in_data, frame_count, time_info, status):
         if not (self.button_held and self.in_range):
-            data = np.zeros(frame_count, dtype=np.float32)
-        else:
-            t = np.linspace(0, frame_count / 44100, frame_count, False)
-            if self.waveform == 0:  # Sine
-                data = np.sin(2 * np.pi * self.frequency * t)
-            elif self.waveform == 1:  # Square
-                data = np.sign(np.sin(2 * np.pi * self.frequency * t))
-            elif self.waveform == 2:  # Sawtooth
-                data = 2 * (t * self.frequency - np.floor(t * self.frequency + 0.5))
-            elif self.waveform == 3:  # Triangle
-                data = 2 * np.abs(2 * (t * self.frequency - np.floor(t * self.frequency + 0.5))) - 1
-            else:
-                data = np.random.uniform(-1, 1, frame_count)  # Noise
-        return (data.astype(np.float32), pyaudio.paContinue)
+            if self.current_note is not None:
+                self.fs.noteoff(0, self.current_note)
+                self.current_note = None
+            return
+
+        midi_note = self.freq_to_midi(self.frequency)
+
+        if midi_note != self.current_note:
+
+            if self.current_note is not None:
+                self.fs.noteoff(0, self.current_note)
+
+            self.fs.noteon(0, midi_note, 120)
+            self.current_note = midi_note
+
+    # --------------------------------------------------
+
+    def buttonDown(self, buttonNumber):
+
+        instruments = [81, 82, 83, 84, 85]  # different synth leads
+        self.instrument = instruments[buttonNumber % len(instruments)]
+
+        self.fs.program_select(0, self.sfid, 0, self.instrument)
+
+        # print("Instrument changed:", self.instrument)
+
+    # --------------------------------------------------
 
     def stop(self):
-        self.stream.stop_stream()
-        self.stream.close()
-        self.p.terminate()
+
+        if self.current_note is not None:
+            self.fs.noteoff(0, self.current_note)
+
+        self.fs.delete()
+
         self.is_playing = False
