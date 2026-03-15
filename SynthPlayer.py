@@ -16,8 +16,9 @@ class SynthPlayer:
         self.min_freq = 130 # C3
         self.max_freq = 1000
         self.min_distance = 5  # Minimum distance in cm for frequency mapping
-        self.max_distance = 25  # Maximum distance in cm for frequency mapping
+        self.max_distance = 35  # Maximum distance in cm for frequency mapping
         self.half_tone_ratio = 2 ** (1 / 12) 
+        self.last_valid_distance = self.min_distance 
 
         self.p = pyaudio.PyAudio()
         self.stream = self.p.open(format=pyaudio.paFloat32,
@@ -41,21 +42,14 @@ class SynthPlayer:
     def update(self):
         # Update frequency based on distance
         distance = self.get_distance()
-        step = 0  # Default
-        if distance > 0:
-            if distance < self.min_distance:
-                step = 0
-            elif distance > self.max_distance:
-                step = 5  # 5 half-tones for the 10cm range (5 steps of 2cm each)
-            else:
-                step = int((distance - self.min_distance) // 2)
-            self.frequency = self.min_freq * (self.half_tone_ratio ** step)
-            self.in_range = True  # Always play when distance > 0
-        else:
-            self.frequency = 220  # Default if no distance
-            self.in_range = False  # Don't play if no valid distance
+        if distance > 0 and self.min_distance <= distance <= self.max_distance:
+            self.last_valid_distance = distance
+        # Always use last_valid_distance for frequency
+        step = int((self.last_valid_distance - self.min_distance) // 2)
+        self.frequency = self.min_freq * (self.half_tone_ratio ** step)
+        self.in_range = distance > 0
 
-        print(f"Distance: {distance:.2f} cm, Step: {step}, Frequency: {self.frequency:.2f} Hz, In range: {self.in_range}")
+        print(f"D: {distance:.2f} cm, Last Valid: {self.last_valid_distance:.2f} cm, Step: {step}, F: {self.frequency:.2f} Hz, In range: {self.in_range}")
         # Check if any generic button is held down
         self.button_held = any(GPIO.input(pin) for pin in self.generic_inputs)
 

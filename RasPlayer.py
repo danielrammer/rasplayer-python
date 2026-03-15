@@ -287,4 +287,4 @@ while True:
     if soundPlayer is not None and hasattr(soundPlayer, 'update'):
         soundPlayer.update()
     # print("main loop: playerMode " + str(playerMode))
-    sleep(0.05)
+    sleep(0.1)
