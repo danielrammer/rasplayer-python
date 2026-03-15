@@ -93,7 +93,7 @@ GPIO.setup(Input.INPUT_INSTRUMENT_MODE, GPIO.IN)
 GPIO.setup(Input.OUTPUT_STATUS_LED, GPIO.OUT)
 
 GPIO.setup(Input.INPUT_SONIC_TRIGGER, GPIO.OUT)
-GPIO.setup(Input.INPUT_SONIC_ECHO, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(Input.INPUT_SONIC_ECHO, GPIO.IN)
 
 # -------- function definitions --------
 # other control functions
@@ -129,28 +129,30 @@ def volumeDown(channel):
     setVolume(currentVolume)
 
 def get_distance():
+    # Ensure trigger is low
+    GPIO.output(Input.INPUT_SONIC_TRIGGER, False)
+    time.sleep(0.002)
+
+    # Send 10µs trigger pulse
     GPIO.output(Input.INPUT_SONIC_TRIGGER, True)
     time.sleep(0.00001)
     GPIO.output(Input.INPUT_SONIC_TRIGGER, False)
-    
-    timeout_start = time.time()
-    while GPIO.input(Input.INPUT_SONIC_ECHO) == 0 and (time.time() - timeout_start) < 0.1:
-        pass
-    if GPIO.input(Input.INPUT_SONIC_ECHO) == 0:
-        return -1  # Timeout waiting for echo start
-    
+
+    # Wait for echo start
     start_time = time.time()
-    
-    timeout_start = time.time()
-    while GPIO.input(Input.INPUT_SONIC_ECHO) == 1 and (time.time() - timeout_start) < 0.1:
-        pass
-    if GPIO.input(Input.INPUT_SONIC_ECHO) == 1:
-        return -1  # Timeout waiting for echo end
-    
-    stop_time = time.time()
-    
-    time_elapsed = stop_time - start_time
-    distance = (time_elapsed * 34300) / 2
+    while GPIO.input(Input.INPUT_SONIC_ECHO) == 0:
+        start_time = time.time()
+
+    # Wait for echo end
+    end_time = time.time()
+    while GPIO.input(Input.INPUT_SONIC_ECHO) == 1:
+        end_time = time.time()
+
+    # Calculate distance
+    elapsed = end_time - start_time
+    distance = (elapsed * 34300) / 2  # cm
+
+    # print(f"D: {distance:.2f} cm")
     return distance
 
 # TODO: set this by defined GOIO inputs (bananas)
