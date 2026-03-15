@@ -13,11 +13,11 @@ class SynthPlayer:
         self.in_range = False  # Track if distance is within frequency mapping range
 
         # Frequency mapping parameters
-        self.min_freq = 100
+        self.min_freq = 130 # C3
         self.max_freq = 1000
         self.min_distance = 5  # Minimum distance in cm for frequency mapping
-        self.max_distance = 17  # Maximum distance in cm for frequency mapping
-        self.whole_tone_ratio = 2 ** (1 / 6)  # Ratio for one whole tone (2 half-tones)
+        self.max_distance = 25  # Maximum distance in cm for frequency mapping
+        self.half_tone_ratio = 2 ** (1 / 12) 
 
         self.p = pyaudio.PyAudio()
         self.stream = self.p.open(format=pyaudio.paFloat32,
@@ -49,7 +49,7 @@ class SynthPlayer:
                 step = 5  # 5 half-tones for the 10cm range (5 steps of 2cm each)
             else:
                 step = int((distance - self.min_distance) // 2)
-            self.frequency = self.min_freq * (self.whole_tone_ratio ** step)
+            self.frequency = self.min_freq * (self.half_tone_ratio ** step)
             self.in_range = True  # Always play when distance > 0
         else:
             self.frequency = 220  # Default if no distance
