@@ -1,10 +1,17 @@
 import RPi.GPIO as GPIO
+from SoundPlayer import SoundPlayerBase
 import pyaudio
 import numpy as np
 
 
-class SynthPlayer:
+class SynthPlayer(SoundPlayerBase):
     def __init__(self, vlcInstance, player, path, get_distance_func):
+                # System sounds can not be played by generic buttons
+        SoundPlayerBase.__init__(self, vlcInstance, player, path)
+
+        self.vlcInstance = vlcInstance
+        self.player = player
+        self.path = path
         self.is_playing = True  # Always playing for synth
         self.frequency = 440  # Default A4
         self.waveform = 0  # 0: sine, 1: square, 2: saw, 3: triangle
@@ -30,13 +37,13 @@ class SynthPlayer:
 
         # Setup generic inputs for waveform selection
         self.generic_inputs = [11, 5, 6, 19, 16]  # BCM pins
-        for pin in self.generic_inputs:
-            GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-            GPIO.add_event_detect(pin, GPIO.RISING, callback=self.change_waveform, bouncetime=200)
+        # for pin in self.generic_inputs:
+        #     GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+        #     GPIO.add_event_detect(pin, GPIO.RISING, callback=self.buttonDown, bouncetime=200)
 
-    def change_waveform(self, channel):
-        index = self.generic_inputs.index(channel)
-        self.waveform = index % 4  # Cycle through 4 waveforms
+    def buttonDown(self, buttonNumber):
+        # index = self.generic_inputs.index(channel)
+        self.waveform = buttonNumber % 4  # Cycle through 4 waveforms
         print(f"Waveform changed to {self.waveform}")
 
     def update(self):
