@@ -138,15 +138,23 @@ def get_distance():
     time.sleep(0.00001)
     GPIO.output(Input.INPUT_SONIC_TRIGGER, False)
 
+    timeout = time.time() + 0.05  # 20 ms max wait
     # Wait for echo start
     start_time = time.time()
-    while GPIO.input(Input.INPUT_SONIC_ECHO) == 0:
+    while GPIO.input(Input.INPUT_SONIC_ECHO) == 0:  
         start_time = time.time()
+        if time.time() > timeout:
+            # print("Echo start timeout")
+            break  # Timeout
 
+    timeout = time.time() + 0.02  # 20 ms max wait
     # Wait for echo end
     end_time = time.time()
     while GPIO.input(Input.INPUT_SONIC_ECHO) == 1:
         end_time = time.time()
+        if time.time() > timeout:
+            # print("Echo end timeout")
+            break  # Timeout
 
     # Calculate distance
     elapsed = end_time - start_time
@@ -287,4 +295,4 @@ while True:
     if soundPlayer is not None and hasattr(soundPlayer, 'update'):
         soundPlayer.update()
     # print("main loop: playerMode " + str(playerMode))
-    sleep(0.1)
+    sleep(0.05)

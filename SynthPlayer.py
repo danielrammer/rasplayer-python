@@ -15,6 +15,7 @@ class SynthPlayer(SoundPlayerBase):
         self.is_playing = True
         self.frequency = 440
         self.current_note = None
+        self.lastStep = -1
 
         # Frequency mapping
         self.min_freq = 130
@@ -29,6 +30,13 @@ class SynthPlayer(SoundPlayerBase):
 
         # --- FluidSynth setup ---
         self.fs = fluidsynth.Synth()
+        # self.fs.start(driver="alsa")
+
+        # --- safer audio settings for Raspberry Pi ---
+        self.fs.setting("audio.period-size", 1024)
+        self.fs.setting("synth.polyphony", 64)
+        self.fs.setting("audio.periods", 4)
+
         self.fs.start(driver="alsa")
 
         soundfont = "/usr/share/sounds/sf2/FluidR3_GM.sf2"
@@ -51,14 +59,20 @@ class SynthPlayer(SoundPlayerBase):
     def update(self):
 
         distance = self.get_distance()
+        # print("got distance function:", distance)
 
         if distance > 0 and self.min_distance <= distance <= self.max_distance:
             self.last_valid_distance = distance
 
         step = int((self.last_valid_distance - self.min_distance) // 2)
+        # if step == self.lastStep:
+        #     return
+        
         self.frequency = self.min_freq * (self.half_tone_ratio ** step)
 
         self.in_range = distance > 0
+
+        # self.lastStep = step
 
         # print(
         #     f"D:{distance:.2f}cm Last:{self.last_valid_distance:.2f} "
@@ -76,7 +90,6 @@ class SynthPlayer(SoundPlayerBase):
         midi_note = self.freq_to_midi(self.frequency)
 
         if midi_note != self.current_note:
-
             if self.current_note is not None:
                 self.fs.noteoff(0, self.current_note)
 
@@ -87,7 +100,7 @@ class SynthPlayer(SoundPlayerBase):
 
     def buttonDown(self, buttonNumber):
 
-        instruments = [81, 82, 83, 84, 85]  # different synth leads
+        instruments = [86, 80, 71, 93, 19]
         self.instrument = instruments[buttonNumber % len(instruments)]
 
         self.fs.program_select(0, self.sfid, 0, self.instrument)
