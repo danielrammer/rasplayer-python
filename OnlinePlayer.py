@@ -1,7 +1,6 @@
 #!/usr/bin/python
 from time import sleep
 from SoundPlayer import SoundPlayerBase
-import RPi.GPIO as GPIO
 
 class OnlinePlayer(SoundPlayerBase):
 

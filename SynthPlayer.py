@@ -1,7 +1,5 @@
 import RPi.GPIO as GPIO
 from SoundPlayer import SoundPlayerBase
-import numpy as np
-import fluidsynth
 
 
 class SynthPlayer(SoundPlayerBase):
@@ -29,6 +27,7 @@ class SynthPlayer(SoundPlayerBase):
         self.generic_inputs = [11,5,6,19,16]
 
         # --- FluidSynth setup ---
+        import fluidsynth
         self.fs = fluidsynth.Synth()
         # self.fs.start(driver="alsa")
 
@@ -52,6 +51,7 @@ class SynthPlayer(SoundPlayerBase):
     # --------------------------------------------------
 
     def freq_to_midi(self, freq):
+        import numpy as np
         return int(69 + 12 * np.log2(freq / 440.0))
 
     # --------------------------------------------------
@@ -110,10 +110,20 @@ class SynthPlayer(SoundPlayerBase):
     # --------------------------------------------------
 
     def stop(self):
-
+        if self.fs is None:
+            self.is_playing = False
+            return
         if self.current_note is not None:
-            self.fs.noteoff(0, self.current_note)
-
-        self.fs.delete()
-
+            try:
+                self.fs.noteoff(0, self.current_note)
+            except Exception:
+                pass
+        try:
+            self.fs.stop()
+        except Exception:
+            pass
+        try:
+            self.fs.delete()
+        finally:
+            self.fs = None
         self.is_playing = False

@@ -1,33 +1,23 @@
 #!/usr/bin/python
-from asyncio import events
 from SoundPlayer import SoundPlayerBase
 from time import sleep
 import RPi.GPIO as GPIO
-import vlc
-import queue
-import threading
 
 class MusicPlayer(SoundPlayerBase):
     currentSong = None
-    _events_attached = False
-
     def __init__(self, vlcInstance, player, path):
         SoundPlayerBase.__init__(self, vlcInstance, player, path)
         print("MusicPlayer initialized with path: " + path)
         # self.setList(path)
 
+        import queue
         self._actions = queue.Queue()
 
         self.player.stop()
         self.setList("./Sounds/Music/0" + str(1) + "/*.mp3")
 
         # maybe we do the following in the base class!
-        self.removeAllGenericGPIOEvents()
-        GPIO.add_event_detect(self.GenericInput.IN_1, GPIO.RISING,  callback=lambda x : self.buttonDown(0), bouncetime=400)
-        GPIO.add_event_detect(self.GenericInput.IN_2, GPIO.RISING,  callback=lambda x : self.buttonDown(1), bouncetime=400)
-        GPIO.add_event_detect(self.GenericInput.IN_3, GPIO.RISING,  callback=lambda x : self.buttonDown(2), bouncetime=400)
-        GPIO.add_event_detect(self.GenericInput.IN_4, GPIO.RISING,  callback=lambda x : self.buttonDown(3), bouncetime=400)
-        GPIO.add_event_detect(self.GenericInput.IN_5, GPIO.RISING,  callback=lambda x : self.buttonDown(4), bouncetime=400)
+        # Generic GPIO callbacks are registered by RasPlayer's dispatcher.
 
         self._attach_events()
 
@@ -36,6 +26,7 @@ class MusicPlayer(SoundPlayerBase):
 
 
     def _attach_events(self):
+        import vlc
         # ensure any previous end events are detached, then attach for this instance
         events = self.player.event_manager()
         try:
@@ -49,12 +40,29 @@ class MusicPlayer(SoundPlayerBase):
             self._on_song_end
         )
 
-        MusicPlayer._events_attached = True
+        self._events_attached = True
+
+    def stop(self):
+        """Detach this instance's VLC callback before the shared player is reused."""
+        if getattr(self, "_events_attached", False):
+            try:
+                import vlc
+                self.player.event_manager().event_detach(
+                    vlc.EventType.MediaPlayerEndReached, self._on_song_end)
+            except Exception as exc:
+                print("MusicPlayer event cleanup failed: %s" % exc, flush=True)
+            self._events_attached = False
+        try:
+            self.player.stop()
+        except Exception:
+            pass
+        self.is_playing = False
 
     # callback when song ends
     def _on_song_end(self, event):
         print("Song ended")
-        threading.Thread(target=self.playNext, daemon=True).start()
+        if SoundPlayerBase.input_dispatcher is not None:
+            SoundPlayerBase.input_dispatcher("next", None)
          #self._actions.put(self.playNext)
 
     # play next song in current list

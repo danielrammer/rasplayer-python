@@ -1,0 +1,23 @@
+[Unit]
+Description=mp3 player and web radio
+StartLimitIntervalSec=60
+StartLimitBurst=5
+# Local playback requires the root filesystem and initialized ALSA, but it
+# must not wait for network-online.target or completion of multi-user.target.
+Wants=sound.target
+After=local-fs.target sound.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=2s
+WatchdogSec=20s
+NotifyAccess=all
+ExecStart=/usr/bin/python /home/dnl/RasPlayer/RasPlayer.py
+WorkingDirectory=/home/dnl/RasPlayer
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

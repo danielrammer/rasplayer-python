@@ -2,9 +2,11 @@
 import glob
 import RPi.GPIO as GPIO
 from enum import IntEnum
-import vlc
 
 class SoundPlayerBase:
+    # GPIO callbacks must remain tiny.  RasPlayer installs this dispatcher so
+    # callbacks only enqueue commands for its single state-owner thread.
+    input_dispatcher = None
     player = None
     is_playing = False
     filelist = ""
@@ -41,11 +43,12 @@ class SoundPlayerBase:
             GPIO.setup(i, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
         self.removeAllGenericGPIOEvents()
-        GPIO.add_event_detect(self.GenericInput.IN_1, GPIO.RISING,  callback=lambda x : self.buttonDown(0), bouncetime=190)
-        GPIO.add_event_detect(self.GenericInput.IN_2, GPIO.RISING,  callback=lambda x : self.buttonDown(1), bouncetime=190)
-        GPIO.add_event_detect(self.GenericInput.IN_3, GPIO.RISING,  callback=lambda x : self.buttonDown(2), bouncetime=190)
-        GPIO.add_event_detect(self.GenericInput.IN_4, GPIO.RISING,  callback=lambda x : self.buttonDown(3), bouncetime=190)
-        GPIO.add_event_detect(self.GenericInput.IN_5, GPIO.RISING,  callback=lambda x : self.buttonDown(4), bouncetime=190)
+        callback = self._generic_callback
+        GPIO.add_event_detect(self.GenericInput.IN_1, GPIO.RISING, callback=callback, bouncetime=190)
+        GPIO.add_event_detect(self.GenericInput.IN_2, GPIO.RISING, callback=callback, bouncetime=190)
+        GPIO.add_event_detect(self.GenericInput.IN_3, GPIO.RISING, callback=callback, bouncetime=190)
+        GPIO.add_event_detect(self.GenericInput.IN_4, GPIO.RISING, callback=callback, bouncetime=190)
+        GPIO.add_event_detect(self.GenericInput.IN_5, GPIO.RISING, callback=callback, bouncetime=190)
 
         # GPIO.add_event_detect(self.GenericInput.IN_1, GPIO.RISING,  callback=lambda x : self.buttonDown(1), bouncetime=300)
         
@@ -65,6 +68,17 @@ class SoundPlayerBase:
         GPIO.remove_event_detect(self.GenericInput.IN_3)
         GPIO.remove_event_detect(self.GenericInput.IN_4)
         GPIO.remove_event_detect(self.GenericInput.IN_5)
+
+    @classmethod
+    def _generic_callback(cls, channel):
+        # GPIO supplies only the channel number; map it without touching the
+        # active player.  The owner thread performs the actual button action.
+        try:
+            button = cls.inputs.index(channel)
+        except ValueError:
+            return
+        if cls.input_dispatcher is not None:
+            cls.input_dispatcher("generic", button)
 
     # TODO: make 2D array to allow more sounds per type
     def setList(self, path):
@@ -119,6 +133,7 @@ class SoundPlayerBase:
         self.is_playing = True
 
     def playPausePlayer(self): 
+        import vlc
         state = self.player.get_state()
         if state == vlc.State.Playing:
             self.player.pause()
