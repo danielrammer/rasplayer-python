@@ -1,0 +1,105 @@
+#!/bin/sh
+
+run_manager() {
+      LOG_DIR=/var/lib/rasplayer/logs
+      mkdir -p "$LOG_DIR"
+      trap 'kill -TERM "$child" 2>/dev/null || true; exit 0' TERM INT
+      backoff=2
+      while :; do
+        cd /home/dnl/RasPlayer || exit 1
+        rm -f /run/rasplayer/heartbeat /run/rasplayer/ready
+        if [ -f "$LOG_DIR/rasplayer.log" ] && [ "$(wc -c < "$LOG_DIR/rasplayer.log")" -gt 1048576 ]; then
+          mv "$LOG_DIR/rasplayer.log" "$LOG_DIR/rasplayer.log.1"
+        fi
+        /usr/bin/boottrace rasplayer_python_launch_begin
+        PYTHON_VLC_LIB_PATH=/usr/lib/libvlc.so.5 \
+        VLC_PLUGIN_PATH=/usr/lib/vlc/plugins \
+        SDL_AUDIODRIVER=alsa \
+        /usr/bin/python3 -u /home/dnl/RasPlayer/RasPlayer.py \
+          >>"$LOG_DIR/rasplayer.log" 2>&1 &
+        child=$!
+        heartbeat_timeout=0
+        echo "$child" > /run/rasplayer/rasplayer.pid
+        /usr/bin/boottrace rasplayer_python_child_started "pid=$child"
+        while kill -0 "$child" 2>/dev/null; do
+          if [ -f /run/rasplayer/heartbeat ]; then
+            now=$(date +%s)
+            beat=$(stat -c %Y /run/rasplayer/heartbeat 2>/dev/null || echo "$now")
+            if [ $((now - beat)) -gt 20 ]; then
+              heartbeat_timeout=1
+              echo "SUPERVISOR heartbeat timeout pid=$child" >>"$LOG_DIR/rasplayer-supervisor.log"
+              /usr/bin/boottrace rasplayer_heartbeat_timeout "pid=$child"
+              kill -TERM "$child" 2>/dev/null || true
+              checks=0
+              while kill -0 "$child" 2>/dev/null && [ "$checks" -lt 5 ]; do
+                sleep 1
+                checks=$((checks + 1))
+              done
+              kill -KILL "$child" 2>/dev/null || true
+              break
+            fi
+          fi
+          sleep 1
+        done
+        wait "$child" 2>/dev/null
+        status=$?
+        echo "SUPERVISOR child_exit pid=$child status=$status heartbeat_timeout=$heartbeat_timeout backoff=$backoff" \
+          >>"$LOG_DIR/rasplayer-supervisor.log"
+        /usr/bin/boottrace rasplayer_python_child_exit \
+          "pid=$child status=$status heartbeat_timeout=$heartbeat_timeout backoff=$backoff"
+        /usr/sbin/rasplayer-diagnostics-save rasplayer_child_exit
+        sleep "$backoff"
+        [ "$backoff" -lt 30 ] && backoff=$((backoff * 2))
+      done
+}
+
+case "$1" in
+  start)
+    mkdir -p /run/rasplayer
+    /usr/bin/boottrace rasplayer_init_start
+    if /sbin/modprobe raspberrypi-gpiomem; then
+      /usr/bin/boottrace rasplayer_gpiomem_module_loaded
+    else
+      /usr/bin/boottrace rasplayer_gpiomem_module_load_failed
+    fi
+    if [ -f /run/rasplayer/manager.pid ] && kill -0 "$(cat /run/rasplayer/manager.pid)" 2>/dev/null; then
+      exit 0
+    fi
+    run_manager &
+    echo $! > /run/rasplayer/manager.pid
+    /usr/bin/boottrace rasplayer_manager_started "pid=$!"
+    (
+      checks=0
+      while [ ! -f /run/rasplayer/ready ] && [ "$checks" -lt 600 ]; do
+        sleep 0.1
+        checks=$((checks + 1))
+      done
+      if [ -f /run/rasplayer/ready ]; then
+        /usr/bin/boottrace local_ready_file_observed
+      else
+        /usr/bin/boottrace local_ready_timeout_after_60s
+      fi
+      /usr/sbin/boottrace-save
+      sleep 25
+      /usr/sbin/rasplayer-diagnostics-save post_local_ready
+    ) &
+    ;;
+  stop)
+    if [ -f /run/rasplayer/rasplayer.pid ]; then
+      kill -TERM "$(cat /run/rasplayer/rasplayer.pid)" 2>/dev/null || true
+    fi
+    if [ -f /run/rasplayer/manager.pid ]; then
+      kill -TERM "$(cat /run/rasplayer/manager.pid)" 2>/dev/null || true
+    fi
+    ;;
+  restart|reload)
+    "$0" stop
+    "$0" start
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart}"
+    exit 1
+    ;;
+esac
+
+exit 0

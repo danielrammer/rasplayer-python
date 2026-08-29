@@ -25,8 +25,8 @@ system service -> RasPlayer.py
 
 1. Record a monotonic `python_entry` marker and import only GPIO, pygame/sample support, and standard-library control code. VLC, mode classes, FluidSynth, numpy, and asyncio are not imported here.
 2. Register signal handlers, select BCM numbering, configure fixed GPIO pins, and emit `gpio_ready`.
-3. Set mixer volume with `amixer -c 0 sset PCM <volume>%` (initially 80%). Construct the system `SamplePlayer`, initialize pygame mixer, preload its three MP3 files, and play item 0 (expected `TurnOn.mp3`).
-4. Register rising-edge events for global controls and mode selectors. `LOCAL_READY` means physical controls are registered and the immediate local system-sound response can be produced. No content mode is selected (`PlayerMode.NONE`).
+3. Set mixer volume with `amixer -c 0 sset PCM <volume>%` (initially 80%). Launch `mpg123` for `TurnOn.mp3` and verify it remains running; pygame is not imported on this path.
+4. Register rising-edge events for global controls and mode selectors. `LOCAL_READY` means physical controls are registered and the mpg123 startup sound has been successfully triggered. Pygame is loaded on first volume/sample-mode use. No content mode is selected (`PlayerMode.NONE`).
 5. On the first mode selection, import and initialize only that mode's dependencies. The shared VLC instance is created once on first non-system mode use; FluidSynth and numpy are loaded only for Synth mode.
 
 The markers are concise `STARTUP <name> elapsed=<seconds>` lines using
@@ -38,7 +38,7 @@ costs are recorded in `docs/pi-boot-optimization.md`.
 | Component | Import/initialization point | Required before `LOCAL_READY` |
 | --- | --- | --- |
 | `RPi.GPIO` | Entry point imports and pin setup | Yes |
-| pygame/SDL mixer | `SamplePlayer` import and system-sample construction | Yes, for startup audio |
+| pygame/SDL mixer | Lazy `SamplePlayer` import on volume/sample-mode use | No |
 | VLC/libVLC | `ensure_vlc()` called by a selected non-system mode | No |
 | Music/Online player classes | Inside `setPlayerMode()` | No |
 | FluidSynth | Inside `SynthPlayer.__init__` | No |

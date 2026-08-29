@@ -1,0 +1,100 @@
+#!/bin/sh
+
+# Publish every network/SSH stage, including failures, to persistent storage
+# and the readable FAT partition. This is never part of LOCAL_READY.
+stage=${1:-unknown}
+iface=${2:-wlan0}
+lease_ip=${3:-}
+router=${4:-}
+detail=${5:-}
+RUN=/run/rasplayer
+LOG_DIR=/var/lib/rasplayer/logs
+mkdir -p "${RUN}" "${LOG_DIR}"
+read -r uptime _ < /proc/uptime || uptime=unknown
+
+has_ipv4=0
+if ip -4 addr show dev "${iface}" 2>/dev/null | grep -q 'inet '; then
+    has_ipv4=1
+fi
+
+{
+    echo "RasPlayer network status"
+    printf 'stage=%s detail=%s uptime=%s hostname=' "${stage}" "${detail}" "${uptime}"
+    hostname
+    printf 'interface=%s lease_ip=%s router=%s\n' "${iface}" "${lease_ip}" "${router}"
+    echo
+    echo "--- provisioning ---"
+    cat "${RUN}/provision.status" 2>&1 || echo "provision_status=missing"
+    printf 'wpa_config_exists='; [ -s /etc/wpa_supplicant.conf ] && echo yes || echo no
+    printf 'wpa_network_blocks='; grep -c '^[[:space:]]*network[[:space:]]*=' /etc/wpa_supplicant.conf 2>/dev/null || echo 0
+    ls -ln /etc/wpa_supplicant.conf 2>&1 || true
+    echo
+    echo "--- driver and firmware ---"
+    printf 'brcmfmac_module='; [ -d /sys/module/brcmfmac ] && echo loaded || echo missing
+    printf 'wlan0_sysfs='; [ -d "/sys/class/net/${iface}" ] && echo present || echo missing
+    ls -l /lib/firmware/brcm/brcmfmac43455-sdio.* 2>&1 || true
+    dmesg | grep -E 'brcmfmac|brcmutil|mmc1|firmware' | tail -n 80 || true
+    echo
+    echo "--- link and association ---"
+    ip -details link show "${iface}" 2>&1 || true
+    if [ -x /usr/sbin/wpa_cli ]; then
+        /usr/sbin/wpa_cli -p /var/run/wpa_supplicant -i "${iface}" status 2>&1 || true
+    else
+        echo "wpa_cli=missing"
+    fi
+    echo
+    echo "--- address and routes ---"
+    ip -4 addr show "${iface}" 2>&1 || true
+    ip route 2>&1 || true
+    echo
+    echo "--- connectivity ---"
+    if [ "${has_ipv4}" -eq 1 ]; then
+        timeout 4 ping -c 1 -W 2 1.1.1.1 2>&1 || true
+        timeout 5 nslookup antenna.de 2>&1 || true
+    else
+        echo "connectivity=not_tested_no_ipv4"
+    fi
+    echo
+    echo "--- dropbear and account ---"
+    grep '^dnl:' /etc/passwd 2>&1 || echo "dnl_account=missing"
+    if [ -s /home/dnl/.ssh/authorized_keys ]; then
+        echo "authorized_keys=present"
+        ls -ldn /home/dnl /home/dnl/.ssh /home/dnl/.ssh/authorized_keys 2>&1 || true
+        printf 'authorized_key_lines='
+        wc -l < /home/dnl/.ssh/authorized_keys
+    else
+        echo "authorized_keys=missing"
+    fi
+    if [ -s /var/run/dropbear.pid ] && kill -0 "$(cat /var/run/dropbear.pid)" 2>/dev/null; then
+        echo "dropbear_process=running pid=$(cat /var/run/dropbear.pid)"
+    else
+        echo "dropbear_process=not_running"
+    fi
+    netstat -ltn 2>&1 | grep -E '(^|[.:])22[[:space:]]' || echo "dropbear_port_22=not_listening"
+    echo
+    echo "--- recent wpa log ---"
+    tail -n 120 "${LOG_DIR}/wpa_supplicant.log" 2>&1 || true
+} > "${RUN}/network.status.tmp"
+mv "${RUN}/network.status.tmp" "${RUN}/network.status"
+{
+    echo "===== network status ${stage} uptime=${uptime} ====="
+    cat "${RUN}/network.status"
+} >> "${LOG_DIR}/rasplayer-network.log"
+
+LOCK=/run/boottrace/fat.lock
+tries=0
+while ! mkdir "${LOCK}" 2>/dev/null; do
+    tries=$((tries + 1))
+    [ "${tries}" -lt 100 ] || exit 0
+    sleep 0.1
+done
+MOUNT=/mnt/boottrace
+mkdir -p "${MOUNT}"
+if mount -t vfat -o rw,noatime /dev/mmcblk0p1 "${MOUNT}" 2>/dev/null; then
+    cp "${RUN}/network.status" "${MOUNT}/network-status.txt.tmp"
+    sync
+    mv "${MOUNT}/network-status.txt.tmp" "${MOUNT}/network-status.txt"
+    sync
+    umount "${MOUNT}"
+fi
+rmdir "${LOCK}"

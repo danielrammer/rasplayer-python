@@ -1,0 +1,41 @@
+From 8d6f6b635a4d7d9b9adb365b037de0e045f4bf89 Mon Sep 17 00:00:00 2001
+From: RasPlayer Buildroot <rasplayer@localhost>
+Date: Sat, 29 Aug 2026 00:00:00 +0200
+Subject: [PATCH] buildconfig: avoid host paths when cross compiling
+
+Buildroot's cross compiler rejects /usr/X11R6/include, and probing /usr and
+/usr/local can accidentally select host headers or libraries.  LOCALBASE is
+already set to the target sysroot by the package recipe.
+
+Signed-off-by: RasPlayer Buildroot <rasplayer@localhost>
+---
+ buildconfig/config_unix.py | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/buildconfig/config_unix.py b/buildconfig/config_unix.py
+index 8c14914..d44c067 100644
+--- a/buildconfig/config_unix.py
++++ b/buildconfig/config_unix.py
+@@ -12,7 +12,8 @@ else:
+ if os.environ.get('LOCALBASE', ''):
+     extrabases.append(os.environ['LOCALBASE'])
+ 
+-extrabases.extend(("/usr", "/usr/local"))
++if not os.environ.get('PYGAME_CROSS_COMPILE', ''):
++    extrabases.extend(("/usr", "/usr/local"))
+ 
+ class DependencyProg:
+     def __init__(self, name, envname, exename, minver, defaultlibs, version_flag="--version"):
+@@ -53,7 +54,8 @@ class DependencyProg:
+                 elif f[:3] == '-Wl':
+                     self.cflags += '-Xlinker ' + f + ' '
+             if self.name == 'SDL':
+-                inc = '-I' + '/usr/X11R6/include'
++                inc = ('-I' + '/usr/X11R6/include'
++                       if not os.environ.get('PYGAME_CROSS_COMPILE', '') else '')
+                 self.cflags = inc + ' ' + self.cflags
+         except (ValueError, TypeError):
+             print(f'WARNING: "{command}" failed!')
+-- 
+2.39.5
+

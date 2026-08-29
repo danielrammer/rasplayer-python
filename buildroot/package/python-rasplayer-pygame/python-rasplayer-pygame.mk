@@ -1,0 +1,11 @@
+PYTHON_RASPLAYER_PYGAME_VERSION = 2.6.1
+PYTHON_RASPLAYER_PYGAME_SOURCE = pygame-$(PYTHON_RASPLAYER_PYGAME_VERSION).tar.gz
+PYTHON_RASPLAYER_PYGAME_SITE = https://files.pythonhosted.org/packages/49/cc/08bba60f00541f62aaa252ce0cfbd60aebd04616c0b9574f755b583e45ae
+PYTHON_RASPLAYER_PYGAME_SETUP_TYPE = setuptools
+PYTHON_RASPLAYER_PYGAME_DEPENDENCIES = python3 python-numpy python-setuptools sdl2 sdl2_mixer sdl2_image
+PYTHON_RASPLAYER_PYGAME_ENV = \
+	SDL_CONFIG="$(STAGING_DIR)/usr/bin/sdl2-config" \
+	LOCALBASE="$(STAGING_DIR)/usr" \
+	PYGAME_CROSS_COMPILE=1
+
+$(eval $(python-package))

@@ -205,3 +205,33 @@ itself remove Python's cold import cost.
 The current cold pygame/SDL path remains the dominant application cost (about 5.4–5.5 s to minimum imports). The Pi has `/usr/bin/mpg123`; a direct MP3 playback test succeeded (`rc=0`) and a background launch remained alive after 0.208 s. This demonstrates a plausible startup-sound-only alternative, but does not prove first-audio latency, mixer coexistence, or reliable behavior under the appliance amplifier. It was not substituted in production; an A/B prototype with an external audible/line-level measurement is required before claiming the potential ~5 s saving.
 
 Firmware/configuration inspection found standard `dtparam=audio=on`, `dtoverlay=vc4-kms-v3d`, camera/display auto-detection, and no configured boot delays. `vcgencmd` exposes firmware version but no trustworthy firmware-duration timestamp. The inferred 6–7 s pre-kernel interval therefore remains unmeasured; no firmware change was applied. Disabling auto-detection or changing bootloader settings is not justified without evidence of a multi-second gain and carries headless/audio regression risk.
+
+## mpg123 startup-sound optimization (2026-08-28)
+
+**Verified:** `RasPlayer.py` no longer imports `SamplePlayer`/pygame before readiness. It launches `mpg123 -q -o alsa ./Sounds/System/0/TurnOn.mp3`, confirms the process has not failed after 100 ms, and only then emits `audio_ready`, `system_sounds_ready`, and `LOCAL_READY`. The existing pygame `SamplePlayer` remains available through `ensure_sample_player()` for volume sounds and sample modes; any still-running mpg123 child is stopped before pygame initializes and is reaped by the owner tick.
+
+If mpg123 cannot launch or exits unsuccessfully, startup falls back to pygame, plays the same `TurnOn.mp3`, and only then emits `LOCAL_READY`; therefore readiness still implies a usable startup-sound path, at the cost of the old cold-start time on that exceptional path.
+
+Three controlled reboots on `dnl@192.168.0.70` (all `0x50005`) produced:
+
+| Boot | Kernel + userspace | Service start | Python entry | mpg123 trigger | `LOCAL_READY` | Kernel-relative ready |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 4.018 + 9.663 s | 11.483 s | 12.786 s | 13.241 s | 13.305 s | 13.305 s |
+| 2 | 4.014 + 9.870 s | 11.535 s | 12.809 s | 13.251 s | 13.406 s | 13.406 s |
+| 3 | 4.012 + 9.775 s | 12.059 s | 13.119 s | 13.463 s | 13.553 s | 13.553 s |
+
+Python-entry-to-ready was 0.434–0.598 s, versus 5.8–6.0 s with pygame in the critical path. Kernel-relative readiness improved from approximately 18.7 s to 13.3–13.6 s, a repeatable saving of roughly 5.2–5.4 s. The physical power-on → audible startup sound still requires the owner's external measurement. The first-audio check is process/device based rather than an electrical measurement, so amplifier audibility should be confirmed physically.
+
+## First Buildroot physical result and timeline image (2026-08-29)
+
+**Verified on the physical Pi 3B+:** the first Buildroot image boots and reaches
+an audible startup sound in approximately 16 seconds from power application,
+versus approximately 19–20 seconds for the optimized Raspberry Pi OS image.
+
+No further optimization was selected from that aggregate number. The next
+image adds BusyBox-compatible kernel-uptime instrumentation around the full
+init sequence, ALSA-node availability, RasPlayer launch, Python entry, mpg123,
+and `LOCAL_READY`. It saves the combined event/kernel report to the FAT boot
+partition after readiness for retrieval without Wi-Fi. The exact procedure and
+current non-conclusive delay candidates are documented in
+`docs/buildroot-boot-instrumentation.md`.

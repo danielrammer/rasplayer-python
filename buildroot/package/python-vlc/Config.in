@@ -1,0 +1,4 @@
+config BR2_PACKAGE_PYTHON_VLC
+	bool "python-vlc binding"
+	depends on BR2_PACKAGE_PYTHON3
+	depends on BR2_PACKAGE_VLC

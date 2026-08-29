@@ -29,10 +29,11 @@ WantedBy=multi-user.target
 
 **Verified:** The README says `mpg123`, Python/pip, `mpyg321`, and pygame were installed at different points. Current source instead imports `vlc`, `RPi.GPIO`, `pygame`, `numpy`, and `fluidsynth`, and invokes `amixer`. It assumes ALSA device card 0, PCM mixer control, and the FluidR3 soundfont at `/usr/share/sounds/sf2/FluidR3_GM.sf2`.
 
-**Verified after the lazy-startup refactor:** The entry point imports only the
-GPIO/pygame system-sample path before `LOCAL_READY`; VLC, mode classes,
-FluidSynth, numpy, and MusicPlayer threading support are loaded on first mode
-use. See `docs/pi-boot-optimization.md` for Pi measurements.
+**Verified after the mpg123 startup optimization:** The entry point imports
+GPIO and standard-library control code before `LOCAL_READY`; mpg123/ALSA plays
+the startup MP3, while pygame, VLC, mode classes, FluidSynth, numpy, and
+MusicPlayer threading support are loaded only when needed. See
+`docs/pi-boot-optimization.md` for Pi measurements.
 
 **Verified:** Historical README boot suggestions include headless operation; keeping `dhcpcd.service`; disabling Bluetooth by `dtoverlay=disable-bt`; disabling `hciuart`; turning off IPv6 in dhcpcd; and disabling `keyboard-setup.service` and `dphys-swapfile.service`. These are notes, not proof that any change is applied to the Pi.
 

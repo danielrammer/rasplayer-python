@@ -1,0 +1,49 @@
+#!/bin/sh
+
+# Start key-only SSH independently of network readiness. Listening on wildcard
+# addresses lets wlan0 appear later without restarting Dropbear.
+[ ! -r /etc/default/dropbear ] || . /etc/default/dropbear
+PID=/var/run/dropbear.pid
+LOG=/var/lib/rasplayer/logs/dropbear-supervisor.log
+
+publish_ssh_status() {
+    reason=$1
+    (
+        sleep 1
+        /usr/bin/rasplayer-net-status "${reason}" wlan0 "" "" \
+            "dropbear_pidfile=${PID}"
+    ) &
+}
+
+start() {
+    mkdir -p /etc/dropbear /var/lib/rasplayer/logs
+    args="${DROPBEAR_ARGS:-} -R -s -w"
+    echo "DROPBEAR start_begin args=key_only" >> "${LOG}"
+    if start-stop-daemon -S -q -p "${PID}" --exec /usr/sbin/dropbear -- ${args}; then
+        echo "DROPBEAR start_ok pid=$(cat "${PID}" 2>/dev/null)" >> "${LOG}"
+        /usr/bin/boottrace dropbear_started "pid=$(cat "${PID}" 2>/dev/null)"
+        publish_ssh_status dropbear_started
+        echo "Starting dropbear sshd: OK"
+    else
+        echo "DROPBEAR start_failed" >> "${LOG}"
+        /usr/bin/boottrace dropbear_start_failed
+        publish_ssh_status dropbear_start_failed
+        echo "Starting dropbear sshd: FAIL"
+        return 1
+    fi
+}
+
+stop() {
+    if start-stop-daemon -K -q -p "${PID}"; then
+        echo "Stopping dropbear sshd: OK"
+    else
+        echo "Stopping dropbear sshd: FAIL"
+    fi
+}
+
+case "$1" in
+  start) start ;;
+  stop) stop ;;
+  restart|reload) stop; start ;;
+  *) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac

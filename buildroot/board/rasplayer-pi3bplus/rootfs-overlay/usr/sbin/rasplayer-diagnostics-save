@@ -1,0 +1,78 @@
+#!/bin/sh
+
+# Persist post-LOCAL_READY state where it can be recovered without SSH. This
+# runs only in background/error paths and is not part of local readiness.
+REASON=${1:-periodic}
+LOG_DIR=/var/lib/rasplayer/logs
+REPORT=${LOG_DIR}/rasplayer-diagnostics.txt
+TMP=${REPORT}.$$.tmp
+BOOT_MOUNT=/mnt/boottrace
+LOCK=/run/boottrace/fat.lock
+
+mkdir -p "${LOG_DIR}" "${BOOT_MOUNT}" /run/boottrace
+read -r uptime _ < /proc/uptime || uptime=unknown
+{
+    echo "RasPlayer persistent diagnostics"
+    echo "reason=${REASON} uptime=${uptime}"
+    uname -a
+    echo
+    echo "--- processes ---"
+    ps
+    echo
+    echo "--- modules ---"
+    lsmod 2>&1 || true
+    echo
+    echo "--- network ---"
+    ip link 2>&1 || true
+    ip -4 addr 2>&1 || true
+    ip route 2>&1 || true
+    echo
+    echo "--- provisioning and association ---"
+    cat /run/rasplayer/provision.status 2>&1 || true
+    /usr/sbin/wpa_cli -p /var/run/wpa_supplicant -i wlan0 status 2>&1 || true
+    netstat -ltn 2>&1 || true
+    echo
+    echo "--- runtime files ---"
+    ls -l /dev/gpiomem /dev/mem /sys/class/net/wlan0 \
+        /run/rasplayer /run/wpa_supplicant.wlan0.pid \
+        /run/udhcpc.wlan0.pid 2>&1 || true
+    echo
+    echo "--- boot events ---"
+    cat /run/boottrace/events.log 2>&1 || true
+    echo
+    echo "--- RasPlayer supervisor log ---"
+    tail -n 100 "${LOG_DIR}/rasplayer-supervisor.log" 2>&1 || true
+    echo
+    echo "--- RasPlayer log ---"
+    tail -n 300 "${LOG_DIR}/rasplayer.log" 2>&1 || true
+    echo
+    echo "--- network log ---"
+    tail -n 300 "${LOG_DIR}/rasplayer-network.log" 2>&1 || true
+    echo
+    echo "--- wpa_supplicant log ---"
+    tail -n 300 "${LOG_DIR}/wpa_supplicant.log" 2>&1 || true
+    echo
+    echo "--- Dropbear supervisor log ---"
+    tail -n 100 "${LOG_DIR}/dropbear-supervisor.log" 2>&1 || true
+    echo
+    echo "--- kernel tail ---"
+    dmesg | tail -n 300
+} >"${TMP}"
+mv "${TMP}" "${REPORT}"
+
+tries=0
+while ! mkdir "${LOCK}" 2>/dev/null; do
+    tries=$((tries + 1))
+    [ "${tries}" -lt 100 ] || exit 0
+    sleep 0.1
+done
+
+if mount -t vfat -o rw,noatime /dev/mmcblk0p1 "${BOOT_MOUNT}" 2>/dev/null; then
+    cp "${REPORT}" "${BOOT_MOUNT}/rasplayer-diagnostics.txt.tmp"
+    sync
+    mv "${BOOT_MOUNT}/rasplayer-diagnostics.txt.tmp" \
+        "${BOOT_MOUNT}/rasplayer-diagnostics.txt"
+    sync
+    umount "${BOOT_MOUNT}"
+fi
+rmdir "${LOCK}"

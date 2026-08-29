@@ -1,0 +1,4 @@
+config BR2_PACKAGE_PYTHON_PYFLUIDSYNTH
+	bool "pyfluidsynth binding"
+	depends on BR2_PACKAGE_PYTHON3
+	depends on BR2_PACKAGE_FLUIDSYNTH

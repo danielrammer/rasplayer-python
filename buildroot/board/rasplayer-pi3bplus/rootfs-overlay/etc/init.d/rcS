@@ -1,0 +1,70 @@
+#!/bin/sh
+
+TRACE_DIR=/run/boottrace
+EVENTS=${TRACE_DIR}/events.log
+mkdir -p "${TRACE_DIR}"
+: > "${EVENTS}"
+
+trace_event() {
+    read -r uptime _ < /proc/uptime || uptime=unknown
+    event=$1
+    shift
+    if [ "$#" -gt 0 ]; then
+        printf 'BOOTTRACE uptime=%s event=%s detail=%s\n' \
+            "${uptime}" "${event}" "$*" >> "${EVENTS}"
+    else
+        printf 'BOOTTRACE uptime=%s event=%s\n' \
+            "${uptime}" "${event}" >> "${EVENTS}"
+    fi
+}
+
+trace_event userspace_rcS_begin
+
+# Record when the PCM playback node first becomes observable from userspace.
+# If it already exists at rcS entry, this is an upper bound; the timestamped
+# kernel log in the saved report provides the corresponding driver evidence.
+(
+    checks=0
+    state=first_observed
+    if [ -e /dev/snd/pcmC0D0p ]; then
+        state=already_present_at_rcS_begin
+    else
+        while [ ! -e /dev/snd/pcmC0D0p ] && [ "${checks}" -lt 600 ]; do
+            sleep 0.05
+            checks=$((checks + 1))
+        done
+    fi
+    if [ -e /dev/snd/pcmC0D0p ]; then
+        /usr/bin/boottrace alsa_pcmC0D0p_available "${state}"
+    else
+        /usr/bin/boottrace alsa_pcmC0D0p_unavailable_after_30s
+    fi
+) &
+
+# Start every init script in its normal lexical order, recording duration and
+# status without changing the original continue-on-error behavior.
+for i in /etc/init.d/S??*; do
+    [ ! -f "${i}" ] && continue
+    name=${i##*/}
+    trace_event init_script_begin "name=${name}"
+
+    case "${i}" in
+        *.sh)
+            (
+                trap - INT QUIT TSTP
+                set start
+                . "${i}"
+            )
+            status=$?
+            ;;
+        *)
+            "${i}" start
+            status=$?
+            ;;
+    esac
+
+    trace_event init_script_end "name=${name} status=${status}"
+done
+
+trace_event userspace_rcS_end
+exit 0

@@ -1,6 +1,5 @@
 #!/usr/bin/python
 import glob
-import RPi.GPIO as GPIO
 from enum import IntEnum
 
 class SoundPlayerBase:
@@ -35,23 +34,6 @@ class SoundPlayerBase:
         self.player = player
         self.is_playing = False
         # self.setList(path)
-        # GPIO setup - use logical numbering not hw numbering
-        GPIO.setmode(GPIO.BCM)
-        # setup input mapping
-        for i in self.inputs:
-            GPIO.setup(i, GPIO.IN)
-            GPIO.setup(i, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-
-        self.removeAllGenericGPIOEvents()
-        callback = self._generic_callback
-        GPIO.add_event_detect(self.GenericInput.IN_1, GPIO.RISING, callback=callback, bouncetime=190)
-        GPIO.add_event_detect(self.GenericInput.IN_2, GPIO.RISING, callback=callback, bouncetime=190)
-        GPIO.add_event_detect(self.GenericInput.IN_3, GPIO.RISING, callback=callback, bouncetime=190)
-        GPIO.add_event_detect(self.GenericInput.IN_4, GPIO.RISING, callback=callback, bouncetime=190)
-        GPIO.add_event_detect(self.GenericInput.IN_5, GPIO.RISING, callback=callback, bouncetime=190)
-
-        # GPIO.add_event_detect(self.GenericInput.IN_1, GPIO.RISING,  callback=lambda x : self.buttonDown(1), bouncetime=300)
-        
         # self.pausePlayer()
 
     # def stopPlayer(self):
@@ -61,13 +43,6 @@ class SoundPlayerBase:
     #         self.player.stop()
     #         print("SoundPlayer: player stopped")
     #     self.is_playing = False
-
-    def removeAllGenericGPIOEvents(self):
-        GPIO.remove_event_detect(self.GenericInput.IN_1)
-        GPIO.remove_event_detect(self.GenericInput.IN_2)
-        GPIO.remove_event_detect(self.GenericInput.IN_3)
-        GPIO.remove_event_detect(self.GenericInput.IN_4)
-        GPIO.remove_event_detect(self.GenericInput.IN_5)
 
     @classmethod
     def _generic_callback(cls, channel):

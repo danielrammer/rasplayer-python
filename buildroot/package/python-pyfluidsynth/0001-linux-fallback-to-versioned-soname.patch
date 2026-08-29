@@ -1,0 +1,42 @@
+From 6c31ef0f8bf4fd18c6d9043ec880c03700b476e2 Mon Sep 17 00:00:00 2001
+From: RasPlayer Buildroot <rasplayer@localhost>
+Date: Sat, 29 Aug 2026 13:00:00 +0200
+Subject: [PATCH] linux: fall back to loadable FluidSynth sonames
+
+ctypes.util.find_library() returns None on the minimal musl target because
+there is no compiler or ldconfig cache.  The shared library is nevertheless
+installed in the dynamic loader's standard /usr/lib search path.  Probe the
+stable versioned and unversioned sonames directly before reporting failure.
+---
+ fluidsynth.py | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/fluidsynth.py b/fluidsynth.py
+index 597950e..291f0fc 100644
+--- a/fluidsynth.py
++++ b/fluidsynth.py
+@@ -20,6 +20,7 @@
+ """
+ 
+ import os
++import sys
+ from ctypes import (
+     CDLL,
+     CFUNCTYPE,
+@@ -78,6 +78,14 @@ def find_libfluidsynth(debug_print: bool = os.getenv("CI")) -> str:
+         if os.path.exists(lib):
+             return lib
+ 
++    if sys.platform.startswith("linux"):
++        for soname in ("libfluidsynth.so.3", "libfluidsynth.so"):
++            try:
++                CDLL(soname)
++            except OSError:
++                continue
++            return soname
++
+     raise ImportError("Couldn't find the FluidSynth library.")
+ 
+ lib = find_libfluidsynth()
+-- 
+2.43.0

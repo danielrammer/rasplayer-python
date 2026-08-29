@@ -1,0 +1,6 @@
+menu "RasPlayer packages"
+source "$BR2_EXTERNAL_RASPLAYER_PATH/package/rasplayer/Config.in"
+source "$BR2_EXTERNAL_RASPLAYER_PATH/package/python-vlc/Config.in"
+source "$BR2_EXTERNAL_RASPLAYER_PATH/package/python-pyfluidsynth/Config.in"
+source "$BR2_EXTERNAL_RASPLAYER_PATH/package/python-rasplayer-pygame/Config.in"
+endmenu

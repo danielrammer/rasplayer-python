@@ -1,0 +1,191 @@
+#!/bin/sh
+
+CONF=/etc/wpa_supplicant.conf
+WPA_PID=/run/wpa_supplicant.wlan0.pid
+DHCP_PID=/run/udhcpc.wlan0.pid
+WORKER_PID=/run/rasplayer/wifi-worker.pid
+LOG_DIR=/var/lib/rasplayer/logs
+LOG=${LOG_DIR}/rasplayer-network.log
+WPA_LOG=${LOG_DIR}/wpa_supplicant.log
+
+publish_status() {
+  /usr/bin/rasplayer-net-status "$1" wlan0 "${2:-}" "${3:-}" "${4:-}" &
+}
+
+stop_daemon_pidfile() {
+  pidfile=$1
+  if [ -s "${pidfile}" ]; then
+    kill "$(cat "${pidfile}")" 2>/dev/null || true
+  fi
+  rm -f "${pidfile}"
+}
+
+wifi_worker() {
+  attempt=0
+  backoff=2
+  while :; do
+    attempt=$((attempt + 1))
+    echo "WIFI attempt=${attempt} loading brcmfmac"
+    /usr/bin/boottrace wifi_module_load_begin "attempt=${attempt}"
+    publish_status driver_load_begin "" "" "attempt=${attempt}"
+
+    if ! /sbin/modprobe brcmfmac; then
+      echo "WIFI brcmfmac module load failed"
+      /usr/bin/boottrace wifi_module_load_failed "attempt=${attempt}"
+      publish_status driver_load_failed "" "" "attempt=${attempt}"
+      sleep "${backoff}"
+      [ "${backoff}" -ge 30 ] || backoff=$((backoff * 2))
+      continue
+    fi
+
+    checks=0
+    while [ ! -d /sys/class/net/wlan0 ] && [ "${checks}" -lt 300 ]; do
+      sleep 0.1
+      checks=$((checks + 1))
+    done
+    if [ ! -d /sys/class/net/wlan0 ]; then
+      echo "WIFI wlan0 unavailable after module/firmware wait"
+      /usr/bin/boottrace wifi_interface_unavailable "attempt=${attempt}"
+      publish_status wlan0_missing "" "" "attempt=${attempt},wait_ms=$((checks * 100))"
+      sleep "${backoff}"
+      [ "${backoff}" -ge 30 ] || backoff=$((backoff * 2))
+      continue
+    fi
+    /usr/bin/boottrace wifi_interface_ready "attempt=${attempt} wait_ms=$((checks * 100))"
+    publish_status wlan0_ready "" "" "attempt=${attempt},wait_ms=$((checks * 100))"
+
+    if ! /sbin/ip link set wlan0 up; then
+      echo "WIFI failed to bring wlan0 up"
+      /usr/bin/boottrace wifi_link_up_failed "attempt=${attempt}"
+      publish_status wlan0_link_up_failed "" "" "attempt=${attempt}"
+      sleep "${backoff}"
+      [ "${backoff}" -ge 30 ] || backoff=$((backoff * 2))
+      continue
+    fi
+
+    stop_daemon_pidfile "${WPA_PID}"
+    stop_daemon_pidfile "${DHCP_PID}"
+    if [ -f "${WPA_LOG}" ] && [ "$(wc -c < "${WPA_LOG}")" -gt 524288 ]; then
+      mv "${WPA_LOG}" "${WPA_LOG}.1"
+    fi
+    if ! /usr/sbin/wpa_supplicant -B -D nl80211 -i wlan0 -c "${CONF}" \
+        -P "${WPA_PID}" -f "${WPA_LOG}" -t -d; then
+      echo "WIFI wpa_supplicant failed to start"
+      /usr/bin/boottrace wifi_wpa_start_failed "attempt=${attempt}"
+      publish_status wpa_start_failed "" "" "attempt=${attempt}"
+      sleep "${backoff}"
+      [ "${backoff}" -ge 30 ] || backoff=$((backoff * 2))
+      continue
+    fi
+    /usr/bin/boottrace wifi_wpa_started "attempt=${attempt}"
+    publish_status wpa_started "" "" "attempt=${attempt}"
+
+    association_checks=0
+    wpa_state=UNKNOWN
+    while [ "${association_checks}" -lt 30 ]; do
+      if [ ! -s "${WPA_PID}" ] || ! kill -0 "$(cat "${WPA_PID}")" 2>/dev/null; then
+        wpa_state=PROCESS_EXITED
+        break
+      fi
+      wpa_state=$(/usr/sbin/wpa_cli -p /var/run/wpa_supplicant \
+        -i wlan0 status 2>/dev/null | sed -n 's/^wpa_state=//p')
+      [ -n "${wpa_state}" ] || wpa_state=UNKNOWN
+      [ "${wpa_state}" = "COMPLETED" ] && break
+      association_checks=$((association_checks + 1))
+      if [ $((association_checks % 10)) -eq 0 ]; then
+        publish_status wpa_associating "" "" \
+          "attempt=${attempt},state=${wpa_state},seconds=${association_checks}"
+      fi
+      sleep 1
+    done
+    if [ "${wpa_state}" != "COMPLETED" ]; then
+      echo "WIFI association failed state=${wpa_state}"
+      /usr/bin/boottrace wifi_association_failed \
+        "attempt=${attempt} state=${wpa_state}"
+      publish_status wpa_association_failed "" "" \
+        "attempt=${attempt},state=${wpa_state}"
+      stop_daemon_pidfile "${WPA_PID}"
+      sleep "${backoff}"
+      [ "${backoff}" -ge 30 ] || backoff=$((backoff * 2))
+      continue
+    fi
+
+    /usr/bin/boottrace wifi_associated "attempt=${attempt}"
+    publish_status wpa_associated "" "" "attempt=${attempt}"
+    /sbin/udhcpc -b -t 5 -T 3 -A 3 -i wlan0 -p "${DHCP_PID}" \
+      -s /usr/bin/rasplayer-udhcpc-script || true
+    /usr/bin/boottrace wifi_dhcp_started "attempt=${attempt}"
+    publish_status dhcp_started "" "" "attempt=${attempt}"
+    backoff=2
+    dhcp_wait=0
+    lease_reported=0
+
+    while [ -s "${WPA_PID}" ] && kill -0 "$(cat "${WPA_PID}")" 2>/dev/null; do
+      wpa_state=$(/usr/sbin/wpa_cli -p /var/run/wpa_supplicant \
+        -i wlan0 status 2>/dev/null | sed -n 's/^wpa_state=//p')
+      if [ "${wpa_state}" != "COMPLETED" ]; then
+        echo "WIFI association lost state=${wpa_state}"
+        /usr/bin/boottrace wifi_association_lost "state=${wpa_state}"
+        publish_status wpa_association_lost "" "" "state=${wpa_state}"
+        break
+      fi
+      if ip -4 addr show dev wlan0 | grep -q 'inet '; then
+        if [ "${lease_reported}" -eq 0 ]; then
+          lease_reported=1
+          publish_status network_ready "" "" "association=COMPLETED,dhcp=bound"
+        fi
+      else
+        dhcp_wait=$((dhcp_wait + 5))
+        if [ $((dhcp_wait % 15)) -eq 0 ]; then
+          publish_status dhcp_waiting "" "" "seconds=${dhcp_wait}"
+        fi
+        if [ ! -s "${DHCP_PID}" ] || \
+           ! kill -0 "$(cat "${DHCP_PID}" 2>/dev/null)" 2>/dev/null; then
+          rm -f "${DHCP_PID}"
+          /sbin/udhcpc -b -t 5 -T 3 -A 3 -i wlan0 -p "${DHCP_PID}" \
+            -s /usr/bin/rasplayer-udhcpc-script || true
+        fi
+      fi
+      sleep 5
+    done
+
+    echo "WIFI wpa_supplicant stopped or association lost; retrying"
+    stop_daemon_pidfile "${DHCP_PID}"
+    stop_daemon_pidfile "${WPA_PID}"
+    sleep "${backoff}"
+    [ "${backoff}" -ge 30 ] || backoff=$((backoff * 2))
+  done
+}
+
+case "$1" in
+  start)
+    /usr/bin/boottrace wifi_init_start
+    mkdir -p /run/rasplayer "${LOG_DIR}"
+    publish_status wifi_init_start
+    (
+      if ! grep -q '^[[:space:]]*network[[:space:]]*=' "${CONF}" 2>/dev/null; then
+        /usr/bin/boottrace wifi_no_network_block
+        publish_status provisioning_missing "" "" "no_network_block"
+        exit 0
+      fi
+      wifi_worker
+    ) >>"${LOG}" 2>&1 &
+    echo $! > "${WORKER_PID}"
+    echo "Starting Wi-Fi asynchronously"
+    ;;
+  stop)
+    stop_daemon_pidfile "${WORKER_PID}"
+    stop_daemon_pidfile "${DHCP_PID}"
+    stop_daemon_pidfile "${WPA_PID}"
+    ;;
+  restart|reload)
+    "$0" stop
+    "$0" start
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart}"
+    exit 1
+    ;;
+esac
+
+exit 0

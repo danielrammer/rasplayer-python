@@ -1,0 +1,13 @@
+config BR2_PACKAGE_RASPLAYER
+	bool "rasplayer application"
+	select BR2_PACKAGE_PYTHON3
+	select BR2_PACKAGE_MPG123
+	select BR2_PACKAGE_ALSA_LIB
+	select BR2_PACKAGE_ALSA_UTILS
+	select BR2_PACKAGE_PYTHON_RPI_GPIO
+	select BR2_PACKAGE_PYTHON_VLC
+	select BR2_PACKAGE_PYTHON_PYFLUIDSYNTH
+	select BR2_PACKAGE_PYTHON_RASPLAYER_PYGAME
+	default y
+	help
+	  Install the RasPlayer application and its init script.

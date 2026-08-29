@@ -1,0 +1,9 @@
+start_file=start.elf
+fixup_file=fixup.dat
+kernel=Image
+arm_64bit=1
+disable_overscan=1
+gpu_mem=16
+dtparam=audio=on
+dtoverlay=disable-bt
+enable_uart=0

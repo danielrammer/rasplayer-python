@@ -1,0 +1,17 @@
+#!/bin/sh
+
+TRACE_DIR=/run/boottrace
+EVENTS=${TRACE_DIR}/events.log
+
+mkdir -p "${TRACE_DIR}"
+read -r uptime _ < /proc/uptime || uptime=unknown
+event=${1:-unspecified}
+shift || true
+
+if [ "$#" -gt 0 ]; then
+    printf 'BOOTTRACE uptime=%s event=%s detail=%s\n' \
+        "${uptime}" "${event}" "$*" >> "${EVENTS}"
+else
+    printf 'BOOTTRACE uptime=%s event=%s\n' \
+        "${uptime}" "${event}" >> "${EVENTS}"
+fi

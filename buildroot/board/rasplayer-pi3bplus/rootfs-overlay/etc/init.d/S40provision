@@ -1,0 +1,92 @@
+#!/bin/sh
+
+# Import secrets placed on the FAT boot partition before first boot. This is
+# deliberately local-card provisioning: nothing here is sourced from Git.
+MOUNT=/mnt/rasplayer-provision
+BOOT=/dev/mmcblk0p1
+STATUS=/run/rasplayer/provision.status
+mkdir -p "${MOUNT}" /run/rasplayer
+
+normalize_text() {
+    first_three=$(dd if="$1" bs=3 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')
+    if [ "${first_three}" = "efbbbf" ]; then
+        dd if="$1" bs=1 skip=3 2>/dev/null
+    else
+        cat "$1"
+    fi | tr -d '\015'
+}
+
+wifi_result=not_checked
+ssh_result=not_checked
+partition_result=unavailable
+
+if mount -t vfat -o ro,noatime "${BOOT}" "${MOUNT}" 2>/dev/null; then
+    partition_result=mounted
+    if [ -s "${MOUNT}/wifi.network" ]; then
+        normalize_text "${MOUNT}/wifi.network" > /run/rasplayer/wifi.network.normalized
+    else
+        : > /run/rasplayer/wifi.network.normalized
+    fi
+    if grep -q '^[[:space:]]*network[[:space:]]*=' /run/rasplayer/wifi.network.normalized && \
+       grep -q '^[[:space:]]*ssid=' /run/rasplayer/wifi.network.normalized && \
+       grep -Eq '^[[:space:]]*(psk|key_mgmt)=' /run/rasplayer/wifi.network.normalized; then
+        cp /etc/wpa_supplicant.base.conf /etc/wpa_supplicant.conf.tmp
+        cat /run/rasplayer/wifi.network.normalized >> /etc/wpa_supplicant.conf.tmp
+        chmod 0600 /etc/wpa_supplicant.conf.tmp
+        mv /etc/wpa_supplicant.conf.tmp /etc/wpa_supplicant.conf
+        wifi_result=imported_valid_network_block
+        /usr/bin/boottrace wifi_credentials_imported
+    else
+        cp /etc/wpa_supplicant.base.conf /etc/wpa_supplicant.conf.tmp
+        chmod 0600 /etc/wpa_supplicant.conf.tmp
+        mv /etc/wpa_supplicant.conf.tmp /etc/wpa_supplicant.conf
+        wifi_result=missing_or_invalid_network_block
+        /usr/bin/boottrace wifi_credentials_not_provisioned
+    fi
+    rm -f /run/rasplayer/wifi.network.normalized
+
+    if [ -s "${MOUNT}/dnl_authorized_keys" ]; then
+        mkdir -p /home/dnl/.ssh
+        normalize_text "${MOUNT}/dnl_authorized_keys" > /home/dnl/.ssh/authorized_keys.tmp
+        if grep -Eq '^(ssh-|ecdsa-|sk-)' /home/dnl/.ssh/authorized_keys.tmp; then
+            chmod 0600 /home/dnl/.ssh/authorized_keys.tmp
+            chown 1000:1000 /home/dnl/.ssh/authorized_keys.tmp
+            mv /home/dnl/.ssh/authorized_keys.tmp /home/dnl/.ssh/authorized_keys
+            chmod 0700 /home/dnl/.ssh
+            chown 1000:1000 /home/dnl/.ssh /home/dnl/.ssh/authorized_keys
+            ssh_result=imported_valid_key
+            /usr/bin/boottrace ssh_authorized_keys_imported
+        else
+            rm -f /home/dnl/.ssh/authorized_keys.tmp /home/dnl/.ssh/authorized_keys
+            ssh_result=invalid_key_file
+            /usr/bin/boottrace ssh_authorized_keys_invalid
+        fi
+    else
+        rm -f /home/dnl/.ssh/authorized_keys
+        ssh_result=key_file_missing
+        /usr/bin/boottrace ssh_authorized_keys_not_provisioned
+    fi
+    umount "${MOUNT}"
+else
+    /usr/bin/boottrace provisioning_partition_unavailable
+fi
+
+{
+    echo "provision_partition=${partition_result}"
+    echo "wifi_provision=${wifi_result}"
+    echo "ssh_provision=${ssh_result}"
+    printf 'wpa_network_blocks='
+    grep -c '^[[:space:]]*network[[:space:]]*=' /etc/wpa_supplicant.conf 2>/dev/null || echo 0
+    if [ -s /home/dnl/.ssh/authorized_keys ]; then
+        echo "authorized_keys=present"
+    else
+        echo "authorized_keys=missing"
+    fi
+} > "${STATUS}.tmp"
+mv "${STATUS}.tmp" "${STATUS}"
+
+# Publish asynchronously so provisioning diagnostics do not delay RasPlayer.
+/usr/bin/rasplayer-net-status provisioning_complete wlan0 "" "" \
+    "wifi=${wifi_result},ssh=${ssh_result}" &
+
+exit 0

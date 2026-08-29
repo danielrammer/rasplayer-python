@@ -1,0 +1,6 @@
+buildroot-src/
+output/
+local/
+downloads/
+*.log
+raspberrypi3_64_base.config

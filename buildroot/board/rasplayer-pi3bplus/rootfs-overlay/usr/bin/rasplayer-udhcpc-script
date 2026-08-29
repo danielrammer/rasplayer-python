@@ -1,0 +1,14 @@
+#!/bin/sh
+
+/usr/share/udhcpc/default.script "$@"
+case "${1:-}" in
+    bound|renew)
+        /usr/bin/rasplayer-net-status "dhcp_${1}" "${interface:-wlan0}" \
+            "${ip:-}" "${router:-}" "lease_acquired" &
+        ;;
+    deconfig|nak)
+        /usr/bin/rasplayer-net-status "dhcp_${1}" "${interface:-wlan0}" \
+            "" "" "lease_removed_or_rejected" &
+        ;;
+esac
+exit 0

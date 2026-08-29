@@ -1,0 +1,74 @@
+#!/bin/sh
+set -u
+
+TRACE_DIR=/run/boottrace
+EVENTS=${TRACE_DIR}/events.log
+REPORT=/var/log/boot-timeline.txt
+LOG_DIR=/var/lib/rasplayer/logs
+BOOT_MOUNT=/mnt/boottrace
+
+mkdir -p "${TRACE_DIR}" /var/log "${LOG_DIR}" "${BOOT_MOUNT}"
+/usr/bin/boottrace timeline_snapshot_begin
+
+{
+    echo 'RasPlayer Buildroot boot timeline'
+    echo
+    echo 'Times in BOOTTRACE/STARTUP lines are seconds since Linux kernel time zero.'
+    echo 'Firmware time precedes that clock and must be inferred from the same boot'
+    echo 'using the physical power-on measurement, or captured with external hardware.'
+    echo
+    echo '--- metadata ---'
+    printf 'saved_at_uptime='
+    cut -d ' ' -f 1 /proc/uptime
+    printf 'kernel='
+    uname -a
+    printf 'cmdline='
+    cat /proc/cmdline
+    echo
+    echo '--- ordered userspace events ---'
+    cat "${EVENTS}" 2>/dev/null || true
+    echo
+    echo '--- ALSA cards at LOCAL_READY ---'
+    cat /proc/asound/cards 2>/dev/null || echo 'No /proc/asound/cards'
+    echo
+    echo '--- RasPlayer log at snapshot ---'
+    cat "${LOG_DIR}/rasplayer.log" 2>/dev/null || echo 'No RasPlayer log'
+    echo
+    echo '--- network status at snapshot ---'
+    cat /run/rasplayer/network.status 2>/dev/null || echo 'No network status'
+    echo
+    echo '--- kernel log (kernel timestamped) ---'
+    dmesg
+} > "${REPORT}.tmp"
+mv "${REPORT}.tmp" "${REPORT}"
+
+LOCK=/run/boottrace/fat.lock
+tries=0
+while ! mkdir "${LOCK}" 2>/dev/null; do
+    tries=$((tries + 1))
+    [ "${tries}" -lt 100 ] || exit 1
+    sleep 0.1
+done
+if mount -t vfat -o rw,noatime /dev/mmcblk0p1 "${BOOT_MOUNT}"; then
+    rm -f "${BOOT_MOUNT}/boot-timeline-3.txt"
+    if [ -f "${BOOT_MOUNT}/boot-timeline-2.txt" ]; then
+        mv "${BOOT_MOUNT}/boot-timeline-2.txt" \
+            "${BOOT_MOUNT}/boot-timeline-3.txt"
+    fi
+    if [ -f "${BOOT_MOUNT}/boot-timeline.txt" ]; then
+        mv "${BOOT_MOUNT}/boot-timeline.txt" \
+            "${BOOT_MOUNT}/boot-timeline-2.txt"
+    fi
+    cp "${REPORT}" "${BOOT_MOUNT}/boot-timeline.txt.tmp"
+    sync
+    mv "${BOOT_MOUNT}/boot-timeline.txt.tmp" \
+        "${BOOT_MOUNT}/boot-timeline.txt"
+    sync
+    umount "${BOOT_MOUNT}"
+    rmdir "${LOCK}"
+    /usr/bin/boottrace timeline_saved_to_boot_partition
+else
+    rmdir "${LOCK}"
+    /usr/bin/boottrace timeline_boot_partition_mount_failed
+    exit 1
+fi
