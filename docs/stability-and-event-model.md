@@ -2,21 +2,21 @@
 
 ## Implemented command ownership
 
-**Verified:** GPIO callbacks and VLC end callbacks are now lightweight producers. They submit `(command, value)` tuples to a bounded queue (`64` entries). One daemon `SerializedCommandPath` thread is the sole owner of `soundPlayer`, `playerMode`, mode construction, playback commands, and the periodic `update()` call. Handler exceptions are logged and do not terminate the worker; a full queue drops the newest command and logs it.
+**Verified from current source:** GPIO callbacks and VLC end callbacks are lightweight producers. They timestamp and submit commands to a bounded queue (`64` entries). One daemon `SerializedCommandPath` thread is the sole owner of active `soundPlayer`, `playerMode`, mode-generation acceptance, playback commands, and periodic `update()`. Each dequeue logs enqueue/dequeue time, queue wait, depth, handler duration, result, exceptions, and slow ticks.
 
-The mode lifecycle is represented by `mode_state`: `NONE`, `INITIALIZING`, `ACTIVE`, `STOPPING`, or `FAILED`. A transition stops the previous backend, performs initialization atomically on the owner thread, and leaves `NONE`/`FAILED` if initialization fails. Buttons received while initialization is running remain queued and execute in order afterward; callbacks themselves do not block on initialization.
+The mode lifecycle remains `NONE`, `INITIALIZING`, `ACTIVE`, `STOPPING`, or `FAILED`, but potentially blocking backend stop and construction now run on daemon workers. The owner increments a generation, detaches the prior active object, and later accepts a `_mode_ready` result only if its generation is still current. Stale completions are torn down off-thread. Commands continue to dequeue while a mode is preparing; transport/generic commands have no target until that generation becomes active.
 
 ## Resource lifecycle
 
-**Verified:** The shared VLC player remains process-owned and is reused across modes. `MusicPlayer.stop()` detaches its `MediaPlayerEndReached` callback before stopping, preventing stale instances from receiving end events. Synth shutdown attempts `stop()` and always `delete()`s the FluidSynth object, including repeated mode switches. pygame's mixer remains process-owned because system sounds depend on it and is not torn down during mode changes.
+**Verified from current source:** The libVLC instance remains process-owned, but each mode gets a dedicated media player. This prevents a slow network-player stop from blocking or corrupting the player used by local MP3. `MusicPlayer.stop()` detaches its end callback; Synth stop/delete is timed off-thread. Before Synth starts, pygame is invalidated and its mixer is closed so the exclusive Buildroot ALSA `hw:0,0` path is available. Transitions to/from Synth wait, off-thread and for at most five seconds, for prior cleanup.
 
-## Risks intentionally left for the stability follow-up
+## Remaining physical risks
 
-First-use mode initialization is still synchronous on the owner thread (Music/Online/Synth can take seconds), so playback commands queue during that interval. Network/VLC operations may still block the owner thread. GPIO bounce settings remain the primary burst limiter. Physical button/audio regression testing is still required on the appliance.
+Online state polling and Synth ultrasonic polling remain owner-thread ticks. Online logs every VLC state transition and an eight-second open failure/timeout without synchronously stopping the player. Ultrasonic start/end waits remain bounded at 50/20 ms and return `-1` on timeout; ticks of at least 25 ms are logged. Actual ALSA release timing, station playback, sensor behavior, and generation cancellation require Pi validation.
 
 ## Test and deployment status
 
-`tests/test_command_path.py` covers FIFO ordering, handler-failure recovery, and bounded queue behavior with no GPIO/audio hardware. A Pi deployment and controlled smoke test must verify all modes and repeated transitions; record `vcgencmd get_throttled` with timing because the device reports `0x50005`.
+`tests/test_command_path.py` covers FIFO ordering, handler-failure recovery, bounded queues, the prior synchronous-delay model, delegated slow work, and a burst of 20 alternating mode/input commands. The host stress run on 2026-08-29 measured 200.131 ms queue wait behind a simulated 200 ms synchronous initializer versus 0.151 ms for one delegated transition and 2.560 ms maximum across the 40-command burst. These are architecture tests, not Pi latency measurements.
 
 ## Deployment validation (2026-08-28)
 

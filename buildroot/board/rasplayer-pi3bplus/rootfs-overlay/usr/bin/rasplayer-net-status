@@ -26,7 +26,9 @@ fi
     echo "--- provisioning ---"
     cat "${RUN}/provision.status" 2>&1 || echo "provision_status=missing"
     printf 'wpa_config_exists='; [ -s /etc/wpa_supplicant.conf ] && echo yes || echo no
-    printf 'wpa_network_blocks='; grep -c '^[[:space:]]*network[[:space:]]*=' /etc/wpa_supplicant.conf 2>/dev/null || echo 0
+    printf 'wpa_network_blocks='; awk '/^[[:space:]]*network[[:space:]]*=/{count++} END{print count+0}' /etc/wpa_supplicant.conf 2>/dev/null
+    sed -n 's/^[[:space:]]*ssid[[:space:]]*=[[:space:]]*/provisioned_ssid=/p' \
+        /etc/wpa_supplicant.conf 2>/dev/null || true
     ls -ln /etc/wpa_supplicant.conf 2>&1 || true
     echo
     echo "--- driver and firmware ---"
@@ -36,7 +38,7 @@ fi
     dmesg | grep -E 'brcmfmac|brcmutil|mmc1|firmware' | tail -n 80 || true
     echo
     echo "--- link and association ---"
-    ip -details link show "${iface}" 2>&1 || true
+    ip link show "${iface}" 2>&1 || true
     if [ -x /usr/sbin/wpa_cli ]; then
         /usr/sbin/wpa_cli -p /var/run/wpa_supplicant -i "${iface}" status 2>&1 || true
     else
@@ -76,6 +78,11 @@ fi
     tail -n 120 "${LOG_DIR}/wpa_supplicant.log" 2>&1 || true
 } > "${RUN}/network.status.tmp"
 mv "${RUN}/network.status.tmp" "${RUN}/network.status"
+if [ -f "${LOG_DIR}/rasplayer-network.log" ] && \
+   [ "$(wc -c < "${LOG_DIR}/rasplayer-network.log")" -gt 2097152 ]; then
+    mv "${LOG_DIR}/rasplayer-network.log" \
+        "${LOG_DIR}/rasplayer-network.log.1"
+fi
 {
     echo "===== network status ${stage} uptime=${uptime} ====="
     cat "${RUN}/network.status"
