@@ -18,6 +18,7 @@ normalize_text() {
 
 wifi_result=not_checked
 ssh_result=not_checked
+update_key_result=not_checked
 partition_result=unavailable
 
 if mount -t vfat -o ro,noatime "${BOOT}" "${MOUNT}" 2>/dev/null; then
@@ -66,6 +67,29 @@ if mount -t vfat -o ro,noatime "${BOOT}" "${MOUNT}" 2>/dev/null; then
         ssh_result=key_file_missing
         /usr/bin/boottrace ssh_authorized_keys_not_provisioned
     fi
+
+    if [ -s "${MOUNT}/rasplayer-update-public.pem" ]; then
+        normalize_text "${MOUNT}/rasplayer-update-public.pem" \
+            > /etc/rasplayer-update-public.pem.tmp
+        update_key_size=$(wc -c < /etc/rasplayer-update-public.pem.tmp)
+        if [ "${update_key_size}" -le 4096 ] && \
+           grep -q '^-----BEGIN PUBLIC KEY-----$' /etc/rasplayer-update-public.pem.tmp && \
+           grep -q '^-----END PUBLIC KEY-----$' /etc/rasplayer-update-public.pem.tmp; then
+            chmod 0644 /etc/rasplayer-update-public.pem.tmp
+            chown 0:0 /etc/rasplayer-update-public.pem.tmp
+            mv /etc/rasplayer-update-public.pem.tmp /etc/rasplayer-update-public.pem
+            update_key_result=imported_public_key
+            /usr/bin/boottrace rasplayer_update_key_imported
+        else
+            rm -f /etc/rasplayer-update-public.pem.tmp /etc/rasplayer-update-public.pem
+            update_key_result=invalid_public_key
+            /usr/bin/boottrace rasplayer_update_key_invalid
+        fi
+    else
+        rm -f /etc/rasplayer-update-public.pem
+        update_key_result=key_file_missing
+        /usr/bin/boottrace rasplayer_update_key_not_provisioned
+    fi
     umount "${MOUNT}"
 else
     /usr/bin/boottrace provisioning_partition_unavailable
@@ -75,6 +99,7 @@ fi
     echo "provision_partition=${partition_result}"
     echo "wifi_provision=${wifi_result}"
     echo "ssh_provision=${ssh_result}"
+    echo "update_signing_key=${update_key_result}"
     printf 'wpa_network_blocks='
     awk '/^[[:space:]]*network[[:space:]]*=/{count++} END{print count+0}' \
         /etc/wpa_supplicant.conf 2>/dev/null
@@ -88,6 +113,6 @@ mv "${STATUS}.tmp" "${STATUS}"
 
 # Publish asynchronously so provisioning diagnostics do not delay RasPlayer.
 /usr/bin/rasplayer-net-status provisioning_complete wlan0 "" "" \
-    "wifi=${wifi_result},ssh=${ssh_result}" &
+    "wifi=${wifi_result},ssh=${ssh_result},update_key=${update_key_result}" &
 
 exit 0

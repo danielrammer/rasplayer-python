@@ -1,7 +1,8 @@
 # RasPlayer Buildroot image
 
 This external tree targets the Raspberry Pi 3B+ (64-bit) and preserves the
-application path `/home/dnl/RasPlayer`. Buildroot is pinned in
+application release path `/opt/rasplayer/current`; shared media remains at
+`/home/dnl/RasPlayer/Sounds`. Buildroot is pinned in
 `buildroot.version` (2024.02.9, commit
 `d37527ba498c34508b9f3fede34135686c94581e`).
 
@@ -64,9 +65,13 @@ missing content must be supplied as a versioned build input before release.
 The build fails rather than creating an image without `Sounds/`.
 
 The image contains a credential-free `/etc/wpa_supplicant.conf`. Before first
-boot, copy locally prepared `wifi.network` and `dnl_authorized_keys` files to
-the top level of the flashed FAT partition. `S40provision` imports them, then
+boot, copy locally prepared `buildroot/wifi.network`,
+`buildroot/dnl_authorized_keys`, and
+`buildroot/rasplayer-update-public.pem` files to the top level of the flashed
+FAT partition without renaming them. `S40provision` imports them, then
 `S41wifi` starts association/DHCP asynchronously; Dropbear accepts key-only
 SSH for user `dnl`. The files are never committed. See
 `docs/buildroot-remote-development.md` for the one-time procedure and log/IP
-discovery details.
+discovery details. After the signed-deployment bootstrap image is installed,
+normal application iterations use the SSH workflow in
+`docs/buildroot-ssh-development.md` rather than reflashing the card.

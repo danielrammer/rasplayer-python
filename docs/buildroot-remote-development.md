@@ -60,6 +60,60 @@ Connect with the discovered address, for example:
 ssh -i ~/.ssh/rasplayer_buildroot_ed25519 dnl@<address>
 ```
 
+The unprivileged development account can control only the RasPlayer service
+through the installed setuid-root helper:
+
+```sh
+rasplayer-service status
+rasplayer-service stop
+rasplayer-service start
+rasplayer-service restart
+```
+
+For an isolated HC-SR04 wiring check, stop RasPlayer before using the one
+additional fixed diagnostic action:
+
+```sh
+rasplayer-service stop
+rasplayer-service ultrasonic-test
+rasplayer-service start
+```
+
+The diagnostic uses `/dev/gpiomem` directly as root with BCM trigger GPIO 14
+and echo GPIO 15. It prints the initial echo state and ten measurements, each
+with a bounded `ECHO HIGH`/`ECHO LOW` timeout or pulse duration and calculated
+distance. It restores both pins' previous function-select state on normal,
+error, or signal exit. A shared service-control lock prevents RasPlayer from
+starting during the diagnostic. No Python interpreter or caller-selected
+command is involved.
+
+The helper accepts only those five exact actions, only from UID 1000 (`dnl`),
+and executes only `/etc/init.d/S50rasplayer` with a fixed environment. It does
+not provide a shell or general root command execution.
+
+Because RasPlayer executes as root, the image keeps `/home/dnl/RasPlayer` and
+its Python code root-owned and non-writable. Otherwise editing an imported
+Python file followed by a supervised restart would itself be unrestricted root
+execution. `/home/dnl/work` remains owned by `dnl` for uploads and development
+artifacts, and `/home/dnl/RasPlayer/Sounds` remains owned by `dnl` for media
+synchronization.
+
+Signed SSH deployment adds the fixed `deploy` and `rollback` actions. See
+`docs/buildroot-ssh-development.md` for the separate offline release key,
+atomic versioned releases, automatic health rollback, and the boundary between
+SSH-deployable application changes and image-only platform changes.
+
+`S50dropbear` also runs outside the local-startup critical path. After
+`LOCAL_READY` it validates, or atomically creates, a device-unique Ed25519 host
+key at `/etc/dropbear/dropbear_ed25519_host_key`, then starts Dropbear with that
+key explicitly. Host-key creation and SSH connection failures are written to
+`/var/lib/rasplayer/logs/dropbear-supervisor.log`; the worker supervises and
+restarts Dropbear without blocking RasPlayer. The board finalization step
+replaces Buildroot's `/etc/dropbear -> /var/run/dropbear` link with an empty
+`0700` directory on the writable ext4 root, so the generated key persists
+across boots. Runtime setup validates that layout, has a logged volatile
+fallback for read-only media, and retries failures asynchronously.
+
 There is no mDNS dependency; use `network-status.txt`, the DHCP/router lease
 table, or the local display/console to discover the address reliably.
 
@@ -84,6 +138,8 @@ child failures, a combined report is saved to:
 That report contains process/module state, GPIO and network device presence,
 boot events, bounded tails of the application/supervisor/network logs, and a
 kernel-log tail. It contains no provisioned Wi-Fi password or SSH private key.
+The report also includes Dropbear host-key metadata, kernel entropy state, and
+the bounded tail of `dropbear-supervisor.log` (never the private key itself).
 
 No network connection is required to retrieve the boot report: power off after
 waiting at least 30 seconds past the startup sound, remove the card, and read

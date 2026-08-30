@@ -19,6 +19,33 @@ read -r uptime _ < /proc/uptime || uptime=unknown
     echo "--- processes ---"
     ps
     echo
+    echo "--- RasPlayer service state ---"
+    service_status=0
+    /etc/init.d/S50rasplayer status 2>&1 || service_status=$?
+    echo "service_status_exit=${service_status}"
+    printf 'active_release='; readlink /opt/rasplayer/current 2>/dev/null || echo missing
+    printf 'previous_release='; readlink /opt/rasplayer/previous 2>/dev/null || echo missing
+    ls -ldn /opt/rasplayer /opt/rasplayer/releases \
+        /usr/bin/rasplayer-service /usr/sbin/rasplayer-deploy \
+        /etc/rasplayer-update-public.pem 2>&1 || true
+    if [ -s /home/dnl/work/rasplayer-update/manifest ]; then
+        grep -E '^(format|release)=' /home/dnl/work/rasplayer-update/manifest 2>/dev/null || true
+    fi
+    for pid_file in /run/rasplayer/manager.pid /run/rasplayer/rasplayer.pid \
+        /run/rasplayer/ready-watch.pid; do
+        echo "pid_file=${pid_file} value=$(cat "${pid_file}" 2>/dev/null || echo missing)"
+        service_pid=$(cat "${pid_file}" 2>/dev/null || true)
+        case "${service_pid}" in
+            ''|*[!0-9]*) ;;
+            *)
+                printf 'pid=%s cmdline=' "${service_pid}"
+                tr '\000' ' ' < "/proc/${service_pid}/cmdline" 2>/dev/null || echo missing
+                echo
+                grep -E '^(Name|State|Pid|PPid):' "/proc/${service_pid}/status" 2>/dev/null || true
+                ;;
+        esac
+    done
+    echo
     echo "--- modules ---"
     lsmod 2>&1 || true
     echo
@@ -31,6 +58,10 @@ read -r uptime _ < /proc/uptime || uptime=unknown
     cat /run/rasplayer/provision.status 2>&1 || true
     /usr/sbin/wpa_cli -p /var/run/wpa_supplicant -i wlan0 status 2>&1 || true
     netstat -ltn 2>&1 || true
+    printf 'dropbear_key_dir_link='; readlink /etc/dropbear 2>/dev/null || echo not_symlink
+    ls -ldn /etc/dropbear /var/run/dropbear \
+        /etc/dropbear/dropbear_*_host_key 2>&1 || true
+    printf 'entropy_avail='; cat /proc/sys/kernel/random/entropy_avail 2>/dev/null || echo unknown
     echo
     echo "--- runtime files ---"
     ls -l /dev/gpiomem /dev/mem /sys/class/net/wlan0 \

@@ -1,105 +1,308 @@
 #!/bin/sh
 
+RUNTIME_DIR=/run/rasplayer
+MANAGER_PID_FILE=${RUNTIME_DIR}/manager.pid
+CHILD_PID_FILE=${RUNTIME_DIR}/rasplayer.pid
+READY_WATCH_PID_FILE=${RUNTIME_DIR}/ready-watch.pid
+CONTROL_LOCK=${RUNTIME_DIR}/service-control.lock
+LOG_DIR=/var/lib/rasplayer/logs
+SUPERVISOR_LOG=${LOG_DIR}/rasplayer-supervisor.log
+APP_DIR=/opt/rasplayer/current
+
+read_pid() {
+    pid_file=$1
+    [ -s "${pid_file}" ] || return 1
+    service_pid=$(cat "${pid_file}" 2>/dev/null) || return 1
+    case "${service_pid}" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    [ "${service_pid}" -gt 1 ] || return 1
+    printf '%s\n' "${service_pid}"
+}
+
+process_alive() {
+    alive_pid=$1
+    kill -0 "${alive_pid}" 2>/dev/null || return 1
+    if grep -q '^State:[[:space:]]*Z' "/proc/${alive_pid}/status" 2>/dev/null; then
+        return 1
+    fi
+    return 0
+}
+
+pid_matches() {
+    match_pid=$1
+    match_text=$2
+    process_alive "${match_pid}" || return 1
+    [ -r "/proc/${match_pid}/cmdline" ] || return 1
+    match_cmdline=$(tr '\000' ' ' < "/proc/${match_pid}/cmdline" 2>/dev/null)
+    case "${match_cmdline}" in
+        *"${match_text}"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+manager_pid() {
+    manager=$(read_pid "${MANAGER_PID_FILE}") || return 1
+    pid_matches "${manager}" S50rasplayer || return 1
+    printf '%s\n' "${manager}"
+}
+
+child_pid() {
+    child_process=$(read_pid "${CHILD_PID_FILE}") || return 1
+    pid_matches "${child_process}" RasPlayer.py || return 1
+    printf '%s\n' "${child_process}"
+}
+
+ready_watch_pid() {
+    ready_watch=$(read_pid "${READY_WATCH_PID_FILE}") || return 1
+    pid_matches "${ready_watch}" S50rasplayer || return 1
+    printf '%s\n' "${ready_watch}"
+}
+
+remove_stale_pid_files() {
+    manager_pid >/dev/null 2>&1 || rm -f "${MANAGER_PID_FILE}"
+    child_pid >/dev/null 2>&1 || rm -f "${CHILD_PID_FILE}"
+    ready_watch_pid >/dev/null 2>&1 || rm -f "${READY_WATCH_PID_FILE}"
+}
+
+wait_for_exit() {
+    wait_pid=$1
+    wait_checks=$2
+    while process_alive "${wait_pid}" && [ "${wait_checks}" -gt 0 ]; do
+        sleep 0.1
+        wait_checks=$((wait_checks - 1))
+    done
+    ! process_alive "${wait_pid}"
+}
+
+acquire_control_lock() {
+    lock_checks=0
+    while ! mkdir "${CONTROL_LOCK}" 2>/dev/null; do
+        lock_owner=$(cat "${CONTROL_LOCK}/pid" 2>/dev/null || true)
+        case "${lock_owner}" in
+            ''|*[!0-9]*) lock_owner= ;;
+        esac
+        if [ -z "${lock_owner}" ] || ! process_alive "${lock_owner}"; then
+            rm -f "${CONTROL_LOCK}/pid"
+            if rmdir "${CONTROL_LOCK}" 2>/dev/null || [ ! -d "${CONTROL_LOCK}" ]; then
+                continue
+            fi
+        fi
+        lock_checks=$((lock_checks + 1))
+        if [ "${lock_checks}" -ge 100 ]; then
+            echo "RasPlayer service control busy: owner_pid=${lock_owner}" >&2
+            return 1
+        fi
+        sleep 0.1
+    done
+    echo "$$" >"${CONTROL_LOCK}/pid"
+}
+
+release_control_lock() {
+    rm -f "${CONTROL_LOCK}/pid"
+    rmdir "${CONTROL_LOCK}" 2>/dev/null || true
+}
+
+shutdown_manager() {
+    trap - TERM INT
+    manager_self=$(read_pid "${MANAGER_PID_FILE}" 2>/dev/null) || manager_self=unknown
+    echo "SUPERVISOR stop_begin manager=${manager_self} child=${child:-none}" >>"${SUPERVISOR_LOG}"
+    /usr/bin/boottrace rasplayer_manager_stop_begin "manager=${manager_self} child=${child:-none}"
+    if [ -n "${child:-}" ] && process_alive "${child}"; then
+        kill -TERM "${child}" 2>/dev/null || true
+        if ! wait_for_exit "${child}" 80; then
+            echo "SUPERVISOR child_stop_timeout pid=${child} action=SIGKILL" >>"${SUPERVISOR_LOG}"
+            kill -KILL "${child}" 2>/dev/null || true
+            wait_for_exit "${child}" 20 || true
+        fi
+        wait "${child}" 2>/dev/null || true
+    fi
+    rm -f "${CHILD_PID_FILE}" "${MANAGER_PID_FILE}" \
+        "${RUNTIME_DIR}/heartbeat" "${RUNTIME_DIR}/ready"
+    echo "SUPERVISOR stop_complete manager=${manager_self}" >>"${SUPERVISOR_LOG}"
+    /usr/bin/boottrace rasplayer_manager_stopped "manager=${manager_self}"
+    exit 0
+}
+
 run_manager() {
-      LOG_DIR=/var/lib/rasplayer/logs
-      mkdir -p "$LOG_DIR"
-      trap 'kill -TERM "$child" 2>/dev/null || true; exit 0' TERM INT
-      backoff=2
-      while :; do
-        cd /home/dnl/RasPlayer || exit 1
-        rm -f /run/rasplayer/heartbeat /run/rasplayer/ready
-        if [ -f "$LOG_DIR/rasplayer.log" ] && [ "$(wc -c < "$LOG_DIR/rasplayer.log")" -gt 1048576 ]; then
-          mv "$LOG_DIR/rasplayer.log" "$LOG_DIR/rasplayer.log.1"
+    child=
+    backoff=2
+    trap shutdown_manager TERM INT
+    manager_self=$(read_pid "${MANAGER_PID_FILE}" 2>/dev/null) || manager_self=pending
+    echo "SUPERVISOR manager_start pid=${manager_self}" >>"${SUPERVISOR_LOG}"
+    while :; do
+        cd "${APP_DIR}" || exit 1
+        rm -f "${RUNTIME_DIR}/heartbeat" "${RUNTIME_DIR}/ready"
+        if [ -f "${LOG_DIR}/rasplayer.log" ] && \
+           [ "$(wc -c < "${LOG_DIR}/rasplayer.log")" -gt 1048576 ]; then
+            mv "${LOG_DIR}/rasplayer.log" "${LOG_DIR}/rasplayer.log.1"
         fi
         /usr/bin/boottrace rasplayer_python_launch_begin
         PYTHON_VLC_LIB_PATH=/usr/lib/libvlc.so.5 \
         VLC_PLUGIN_PATH=/usr/lib/vlc/plugins \
         SDL_AUDIODRIVER=alsa \
-        /usr/bin/python3 -u /home/dnl/RasPlayer/RasPlayer.py \
-          >>"$LOG_DIR/rasplayer.log" 2>&1 &
+        /usr/bin/python3 -u "${APP_DIR}/RasPlayer.py" \
+            >>"${LOG_DIR}/rasplayer.log" 2>&1 &
         child=$!
         heartbeat_timeout=0
-        echo "$child" > /run/rasplayer/rasplayer.pid
-        /usr/bin/boottrace rasplayer_python_child_started "pid=$child"
-        while kill -0 "$child" 2>/dev/null; do
-          if [ -f /run/rasplayer/heartbeat ]; then
-            now=$(date +%s)
-            beat=$(stat -c %Y /run/rasplayer/heartbeat 2>/dev/null || echo "$now")
-            if [ $((now - beat)) -gt 20 ]; then
-              heartbeat_timeout=1
-              echo "SUPERVISOR heartbeat timeout pid=$child" >>"$LOG_DIR/rasplayer-supervisor.log"
-              /usr/bin/boottrace rasplayer_heartbeat_timeout "pid=$child"
-              kill -TERM "$child" 2>/dev/null || true
-              checks=0
-              while kill -0 "$child" 2>/dev/null && [ "$checks" -lt 5 ]; do
-                sleep 1
-                checks=$((checks + 1))
-              done
-              kill -KILL "$child" 2>/dev/null || true
-              break
+        echo "${child}" >"${CHILD_PID_FILE}"
+        /usr/bin/boottrace rasplayer_python_child_started "pid=${child}"
+        while process_alive "${child}"; do
+            if [ -f "${RUNTIME_DIR}/heartbeat" ]; then
+                now=$(date +%s)
+                beat=$(stat -c %Y "${RUNTIME_DIR}/heartbeat" 2>/dev/null || echo "${now}")
+                if [ $((now - beat)) -gt 20 ]; then
+                    heartbeat_timeout=1
+                    echo "SUPERVISOR heartbeat_timeout pid=${child}" >>"${SUPERVISOR_LOG}"
+                    /usr/bin/boottrace rasplayer_heartbeat_timeout "pid=${child}"
+                    kill -TERM "${child}" 2>/dev/null || true
+                    if ! wait_for_exit "${child}" 50; then
+                        kill -KILL "${child}" 2>/dev/null || true
+                    fi
+                    break
+                fi
             fi
-          fi
-          sleep 1
+            sleep 1
         done
-        wait "$child" 2>/dev/null
-        status=$?
-        echo "SUPERVISOR child_exit pid=$child status=$status heartbeat_timeout=$heartbeat_timeout backoff=$backoff" \
-          >>"$LOG_DIR/rasplayer-supervisor.log"
+        wait "${child}" 2>/dev/null
+        child_status=$?
+        rm -f "${CHILD_PID_FILE}"
+        echo "SUPERVISOR child_exit pid=${child} status=${child_status} heartbeat_timeout=${heartbeat_timeout} backoff=${backoff}" \
+            >>"${SUPERVISOR_LOG}"
         /usr/bin/boottrace rasplayer_python_child_exit \
-          "pid=$child status=$status heartbeat_timeout=$heartbeat_timeout backoff=$backoff"
-        /usr/sbin/rasplayer-diagnostics-save rasplayer_child_exit
-        sleep "$backoff"
-        [ "$backoff" -lt 30 ] && backoff=$((backoff * 2))
-      done
+            "pid=${child} status=${child_status} heartbeat_timeout=${heartbeat_timeout} backoff=${backoff}"
+        /usr/sbin/rasplayer-diagnostics-save rasplayer_child_exit &
+        child=
+        sleep "${backoff}"
+        [ "${backoff}" -lt 30 ] && backoff=$((backoff * 2))
+    done
 }
 
-case "$1" in
-  start)
-    mkdir -p /run/rasplayer
+start_service() {
+    mkdir -p "${RUNTIME_DIR}" "${LOG_DIR}"
+    remove_stale_pid_files
+    if manager=$(manager_pid); then
+        echo "RasPlayer already running: manager=${manager}"
+        return 0
+    fi
+    if orphan=$(child_pid); then
+        echo "RasPlayer orphan detected: child=${orphan}; stopping it first"
+        kill -TERM "${orphan}" 2>/dev/null || true
+        wait_for_exit "${orphan}" 50 || kill -KILL "${orphan}" 2>/dev/null || true
+        rm -f "${CHILD_PID_FILE}"
+    fi
+
     /usr/bin/boottrace rasplayer_init_start
     if /sbin/modprobe raspberrypi-gpiomem; then
-      /usr/bin/boottrace rasplayer_gpiomem_module_loaded
+        /usr/bin/boottrace rasplayer_gpiomem_module_loaded
     else
-      /usr/bin/boottrace rasplayer_gpiomem_module_load_failed
-    fi
-    if [ -f /run/rasplayer/manager.pid ] && kill -0 "$(cat /run/rasplayer/manager.pid)" 2>/dev/null; then
-      exit 0
+        /usr/bin/boottrace rasplayer_gpiomem_module_load_failed
     fi
     run_manager &
-    echo $! > /run/rasplayer/manager.pid
-    /usr/bin/boottrace rasplayer_manager_started "pid=$!"
+    manager=$!
+    echo "${manager}" >"${MANAGER_PID_FILE}"
+    /usr/bin/boottrace rasplayer_manager_started "pid=${manager}"
+    echo "RasPlayer started: manager=${manager}"
     (
-      checks=0
-      while [ ! -f /run/rasplayer/ready ] && [ "$checks" -lt 600 ]; do
-        sleep 0.1
-        checks=$((checks + 1))
-      done
-      if [ -f /run/rasplayer/ready ]; then
-        /usr/bin/boottrace local_ready_file_observed
-      else
-        /usr/bin/boottrace local_ready_timeout_after_60s
-      fi
-      /usr/sbin/boottrace-save
-      sleep 25
-      /usr/sbin/rasplayer-diagnostics-save post_local_ready
+        checks=0
+        while [ ! -f "${RUNTIME_DIR}/ready" ] && [ "${checks}" -lt 600 ]; do
+            sleep 0.1
+            checks=$((checks + 1))
+        done
+        if [ -f "${RUNTIME_DIR}/ready" ]; then
+            /usr/bin/boottrace local_ready_file_observed
+        else
+            /usr/bin/boottrace local_ready_timeout_after_60s
+        fi
+        /usr/sbin/boottrace-save
+        sleep 25
+        /usr/sbin/rasplayer-diagnostics-save post_local_ready
     ) &
-    ;;
-  stop)
-    if [ -f /run/rasplayer/rasplayer.pid ]; then
-      kill -TERM "$(cat /run/rasplayer/rasplayer.pid)" 2>/dev/null || true
-    fi
-    if [ -f /run/rasplayer/manager.pid ]; then
-      kill -TERM "$(cat /run/rasplayer/manager.pid)" 2>/dev/null || true
-    fi
-    ;;
-  restart|reload)
-    "$0" stop
-    "$0" start
-    ;;
-  *)
-    echo "Usage: $0 {start|stop|restart}"
-    exit 1
-    ;;
-esac
+    ready_watch=$!
+    echo "${ready_watch}" >"${READY_WATCH_PID_FILE}"
+}
 
-exit 0
+stop_service() {
+    mkdir -p "${RUNTIME_DIR}" "${LOG_DIR}"
+    remove_stale_pid_files
+    manager=$(manager_pid 2>/dev/null) || manager=
+    child_process=$(child_pid 2>/dev/null) || child_process=
+    ready_watch=$(ready_watch_pid 2>/dev/null) || ready_watch=
+    if [ -z "${manager}" ] && [ -z "${child_process}" ]; then
+        [ -z "${ready_watch}" ] || kill -TERM "${ready_watch}" 2>/dev/null || true
+        rm -f "${MANAGER_PID_FILE}" "${CHILD_PID_FILE}" "${READY_WATCH_PID_FILE}" \
+            "${RUNTIME_DIR}/heartbeat" "${RUNTIME_DIR}/ready"
+        echo "RasPlayer already stopped"
+        return 0
+    fi
+
+    [ -z "${ready_watch}" ] || kill -TERM "${ready_watch}" 2>/dev/null || true
+
+    if [ -n "${manager}" ]; then
+        echo "RasPlayer stopping: manager=${manager} child=${child_process:-none}"
+        kill -TERM "${manager}" 2>/dev/null || true
+        if ! wait_for_exit "${manager}" 120; then
+            echo "RasPlayer manager stop timeout; sending SIGKILL"
+            kill -KILL "${manager}" 2>/dev/null || true
+            wait_for_exit "${manager}" 20 || true
+        fi
+    fi
+    child_process=$(child_pid 2>/dev/null) || child_process=
+    if [ -n "${child_process}" ]; then
+        kill -TERM "${child_process}" 2>/dev/null || true
+        if ! wait_for_exit "${child_process}" 50; then
+            kill -KILL "${child_process}" 2>/dev/null || true
+            wait_for_exit "${child_process}" 20 || true
+        fi
+    fi
+    rm -f "${MANAGER_PID_FILE}" "${CHILD_PID_FILE}" "${READY_WATCH_PID_FILE}" \
+        "${RUNTIME_DIR}/heartbeat" "${RUNTIME_DIR}/ready"
+    /usr/bin/boottrace rasplayer_init_stopped
+    echo "RasPlayer stopped"
+}
+
+status_service() {
+    remove_stale_pid_files
+    manager=$(manager_pid 2>/dev/null) || manager=
+    child_process=$(child_pid 2>/dev/null) || child_process=
+    ready_watch=$(ready_watch_pid 2>/dev/null) || ready_watch=
+    ready=no
+    heartbeat_age=unavailable
+    [ ! -f "${RUNTIME_DIR}/ready" ] || ready=yes
+    if [ -f "${RUNTIME_DIR}/heartbeat" ]; then
+        now=$(date +%s)
+        beat=$(stat -c %Y "${RUNTIME_DIR}/heartbeat" 2>/dev/null || echo "${now}")
+        heartbeat_age=$((now - beat))
+    fi
+    if [ -n "${manager}" ]; then
+        if [ -n "${child_process}" ]; then
+            state=running
+        else
+            state=supervisor_running_child_restarting
+        fi
+        echo "RasPlayer state=${state} manager_pid=${manager} child_pid=${child_process:-none} ready_watch_pid=${ready_watch:-none} local_ready=${ready} heartbeat_age_seconds=${heartbeat_age}"
+        return 0
+    fi
+    if [ -n "${child_process}" ]; then
+        echo "RasPlayer state=orphaned manager_pid=none child_pid=${child_process} ready_watch_pid=${ready_watch:-none} local_ready=${ready} heartbeat_age_seconds=${heartbeat_age}"
+        return 1
+    fi
+    echo "RasPlayer state=stopped manager_pid=none child_pid=none ready_watch_pid=${ready_watch:-none} local_ready=${ready} heartbeat_age_seconds=${heartbeat_age}"
+    return 3
+}
+
+mkdir -p "${RUNTIME_DIR}"
+control_lock_owned=0
+if [ "${RASPLAYER_CONTROL_LOCK_HELD:-0}" != 1 ]; then
+    acquire_control_lock || exit 75
+    control_lock_owned=1
+fi
+case "$1" in
+    start) start_service; result=$? ;;
+    stop) stop_service; result=$? ;;
+    restart|reload) stop_service && start_service; result=$? ;;
+    status) status_service; result=$? ;;
+    *) echo "Usage: $0 {start|stop|restart|status}"; result=2 ;;
+esac
+[ "${control_lock_owned}" -eq 0 ] || release_control_lock
+exit "${result}"

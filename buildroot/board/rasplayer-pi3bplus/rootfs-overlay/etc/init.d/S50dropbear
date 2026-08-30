@@ -1,44 +1,227 @@
 #!/bin/sh
 
-# Start key-only SSH independently of network readiness. Listening on wildcard
-# addresses lets wlan0 appear later without restarting Dropbear.
+# Host-key creation and SSH are deliberately outside LOCAL_READY. Generating
+# the key before accepting connections avoids Dropbear's -R KEX-time failure
+# path and gives connection children a validated signing key.
 [ ! -r /etc/default/dropbear ] || . /etc/default/dropbear
 PID=/var/run/dropbear.pid
-LOG=/var/lib/rasplayer/logs/dropbear-supervisor.log
+WORKER_PID=/run/rasplayer/dropbear-worker.pid
+KEY_DIR=/etc/dropbear
+HOST_KEY=${KEY_DIR}/dropbear_ed25519_host_key
+LOG_DIR=/var/lib/rasplayer/logs
+LOG=${LOG_DIR}/dropbear-supervisor.log
+KEY_STDOUT=/run/rasplayer/dropbearkey.stdout
+KEY_STDERR=/run/rasplayer/dropbearkey.stderr
 
 publish_ssh_status() {
-    reason=$1
-    (
+    /usr/bin/rasplayer-net-status "$1" wlan0 "" "" "${2:-}" &
+}
+
+run_dropbearkey() {
+    key_operation=$1
+    shift
+    : >"${KEY_STDOUT}"
+    : >"${KEY_STDERR}"
+    echo "DROPBEARKEY operation=${key_operation} command=/usr/bin/dropbearkey $*"
+    /usr/bin/dropbearkey "$@" >"${KEY_STDOUT}" 2>"${KEY_STDERR}"
+    key_status=$?
+    echo "DROPBEARKEY operation=${key_operation} exit_status=${key_status}"
+    echo "DROPBEARKEY operation=${key_operation} stdout_begin"
+    cat "${KEY_STDOUT}"
+    echo "DROPBEARKEY operation=${key_operation} stdout_end"
+    echo "DROPBEARKEY operation=${key_operation} stderr_begin"
+    cat "${KEY_STDERR}"
+    echo "DROPBEARKEY operation=${key_operation} stderr_end"
+    return "${key_status}"
+}
+
+validate_host_key() {
+    run_dropbearkey validate -y -f "$1"
+}
+
+prepare_key_dir() {
+    echo "DROPBEAR key_dir_prepare_begin path=${KEY_DIR}"
+    ls -ld /etc /etc/dropbear /var /var/run /var/run/dropbear /run /run/dropbear 2>&1 || true
+
+    if [ -L "${KEY_DIR}" ]; then
+        key_link=$(readlink "${KEY_DIR}" 2>&1)
+        key_link_status=$?
+        echo "DROPBEAR key_dir_symlink target=${key_link} readlink_status=${key_link_status}"
+        if [ "${key_link_status}" -ne 0 ]; then
+            return 1
+        fi
+        if [ "${key_link}" != "/var/run/dropbear" ]; then
+            echo "DROPBEAR key_dir_unexpected_symlink target=${key_link}"
+            return 1
+        fi
+
+        # Buildroot installs this link for read-only-rootfs systems. This image
+        # has a writable ext4 root, so replace it with a persistent directory.
+        rm -f "${KEY_DIR}"
+        key_rm_status=$?
+        echo "DROPBEAR key_dir_remove_symlink exit_status=${key_rm_status}"
+        if [ "${key_rm_status}" -ne 0 ]; then
+            echo "DROPBEAR key_dir_volatile_fallback path=${key_link}"
+            mkdir -p "${key_link}"
+            key_mkdir_status=$?
+            echo "DROPBEAR key_dir_volatile_mkdir exit_status=${key_mkdir_status}"
+            [ "${key_mkdir_status}" -eq 0 ] || return 1
+        fi
+    fi
+
+    mkdir -p "${KEY_DIR}"
+    key_mkdir_status=$?
+    echo "DROPBEAR key_dir_mkdir path=${KEY_DIR} exit_status=${key_mkdir_status}"
+    [ "${key_mkdir_status}" -eq 0 ] || return 1
+    chmod 0700 "${KEY_DIR}"
+    key_chmod_status=$?
+    echo "DROPBEAR key_dir_chmod mode=0700 exit_status=${key_chmod_status}"
+    [ "${key_chmod_status}" -eq 0 ] || return 1
+    test -d "${KEY_DIR}"
+    key_test_status=$?
+    echo "DROPBEAR key_dir_test_directory exit_status=${key_test_status}"
+    ls -ld "${KEY_DIR}" 2>&1 || true
+    return "${key_test_status}"
+}
+
+generate_host_key() {
+    tmp=${HOST_KEY}.tmp.$$
+    rm -f "${tmp}"
+    echo "DROPBEAR hostkey_generate_begin uptime=$(cut -d' ' -f1 /proc/uptime) entropy=$(cat /proc/sys/kernel/random/entropy_avail 2>/dev/null)"
+    run_dropbearkey generate -t ed25519 -f "${tmp}"
+    generate_status=$?
+    if [ "${generate_status}" -ne 0 ]; then
+        echo "DROPBEAR hostkey_generate_failed exit_status=${generate_status} temp=${tmp}"
+        ls -ld "${KEY_DIR}" "${tmp}" 2>&1 || true
+        rm -f "${tmp}"
+        return 1
+    fi
+    chmod 0600 "${tmp}"
+    chmod_status=$?
+    chown 0:0 "${tmp}"
+    chown_status=$?
+    echo "DROPBEAR hostkey_permissions chmod_status=${chmod_status} chown_status=${chown_status}"
+    if [ "${chmod_status}" -ne 0 ] || [ "${chown_status}" -ne 0 ]; then
+        ls -ln "${tmp}" 2>&1 || true
+        rm -f "${tmp}"
+        return 1
+    fi
+    if ! validate_host_key "${tmp}"; then
+        echo "DROPBEAR generated_hostkey_validation_failed"
+        rm -f "${tmp}"
+        return 1
+    fi
+    mv "${tmp}" "${HOST_KEY}"
+    move_status=$?
+    echo "DROPBEAR hostkey_atomic_rename source=${tmp} destination=${HOST_KEY} exit_status=${move_status}"
+    [ "${move_status}" -eq 0 ] || return 1
+    sync "${KEY_DIR}" 2>/dev/null || sync
+    echo "DROPBEAR hostkey_generate_complete path=${HOST_KEY}"
+    ls -ln "${HOST_KEY}" 2>&1 || true
+    grep '^Fingerprint:' "${KEY_STDOUT}" || true
+}
+
+dropbear_worker() {
+    checks=0
+    while [ ! -f /run/rasplayer/ready ] && [ "${checks}" -lt 600 ]; do
+        sleep 0.1
+        checks=$((checks + 1))
+    done
+    echo "DROPBEAR worker_ready_wait_complete checks=${checks} rasplayer_ready=$([ -f /run/rasplayer/ready ] && echo yes || echo no)"
+    echo "DROPBEAR entropy_avail=$(cat /proc/sys/kernel/random/entropy_avail 2>/dev/null)"
+    ls -l /dev/random /dev/urandom /dev/hwrng 2>&1 || true
+
+    if ! prepare_key_dir; then
+        echo "DROPBEAR key_dir_prepare_failed"
+        /usr/bin/boottrace dropbear_key_dir_failed
+        publish_ssh_status dropbear_key_dir_failed "path=${KEY_DIR}"
+        return 1
+    fi
+
+    if [ -s "${HOST_KEY}" ]; then
+        if validate_host_key "${HOST_KEY}"; then
+            echo "DROPBEAR existing_hostkey_valid"
+            grep '^Fingerprint:' "${KEY_STDOUT}" || true
+        else
+            invalid=${HOST_KEY}.invalid.$(date +%s)
+            echo "DROPBEAR existing_hostkey_invalid moved_to=${invalid}"
+            mv "${HOST_KEY}" "${invalid}"
+        fi
+    fi
+
+    if [ ! -s "${HOST_KEY}" ] && ! generate_host_key; then
+        /usr/bin/boottrace dropbear_hostkey_failed
+        publish_ssh_status dropbear_hostkey_failed "explicit_ed25519_generation_failed"
+        return 1
+    fi
+    if ! validate_host_key "${HOST_KEY}"; then
+        echo "DROPBEAR final_hostkey_validation_failed"
+        /usr/bin/boottrace dropbear_hostkey_validation_failed
+        publish_ssh_status dropbear_hostkey_validation_failed
+        return 1
+    fi
+
+    /usr/bin/boottrace dropbear_hostkey_ready
+    trap 'if [ -n "${server:-}" ]; then kill "${server}" 2>/dev/null || true; fi; exit 0' TERM INT
+    while :; do
+        echo "DROPBEAR server_start key=${HOST_KEY} args=foreground_stderr,key_only"
+        /usr/sbin/dropbear -F -E -P "${PID}" -r "${HOST_KEY}" \
+            -s -w ${DROPBEAR_ARGS:-} &
+        server=$!
         sleep 1
-        /usr/bin/rasplayer-net-status "${reason}" wlan0 "" "" \
-            "dropbear_pidfile=${PID}"
-    ) &
+        if kill -0 "${server}" 2>/dev/null; then
+            /usr/bin/boottrace dropbear_started "pid=${server}"
+            publish_ssh_status dropbear_started \
+                "explicit_hostkey=${HOST_KEY},pid=${server}"
+        fi
+        wait "${server}"
+        status=$?
+        echo "DROPBEAR server_exit pid=${server} status=${status}"
+        /usr/bin/boottrace dropbear_server_exit \
+            "pid=${server} status=${status}"
+        publish_ssh_status dropbear_server_exit "status=${status}"
+        rm -f "${PID}"
+        sleep 2
+    done
+}
+
+dropbear_supervisor() {
+    worker_attempt=1
+    while :; do
+        echo "DROPBEAR worker_attempt=${worker_attempt}"
+        dropbear_worker
+        worker_status=$?
+        echo "DROPBEAR worker_exit attempt=${worker_attempt} status=${worker_status} retry_seconds=10"
+        /usr/bin/boottrace dropbear_worker_exit \
+            "attempt=${worker_attempt} status=${worker_status}"
+        worker_attempt=$((worker_attempt + 1))
+        sleep 10
+    done
 }
 
 start() {
-    mkdir -p /etc/dropbear /var/lib/rasplayer/logs
-    args="${DROPBEAR_ARGS:-} -R -s -w"
-    echo "DROPBEAR start_begin args=key_only" >> "${LOG}"
-    if start-stop-daemon -S -q -p "${PID}" --exec /usr/sbin/dropbear -- ${args}; then
-        echo "DROPBEAR start_ok pid=$(cat "${PID}" 2>/dev/null)" >> "${LOG}"
-        /usr/bin/boottrace dropbear_started "pid=$(cat "${PID}" 2>/dev/null)"
-        publish_ssh_status dropbear_started
-        echo "Starting dropbear sshd: OK"
-    else
-        echo "DROPBEAR start_failed" >> "${LOG}"
-        /usr/bin/boottrace dropbear_start_failed
-        publish_ssh_status dropbear_start_failed
-        echo "Starting dropbear sshd: FAIL"
-        return 1
+    # KEY_DIR is intentionally prepared by the worker after LOCAL_READY.
+    mkdir -p "${LOG_DIR}" /run/rasplayer
+    if [ -f "${LOG}" ] && [ "$(wc -c < "${LOG}")" -gt 1048576 ]; then
+        mv "${LOG}" "${LOG}.1"
     fi
+    if [ -s "${WORKER_PID}" ] && kill -0 "$(cat "${WORKER_PID}")" 2>/dev/null; then
+        echo "Dropbear worker already running"
+        return 0
+    fi
+    rm -f "${PID}" "${WORKER_PID}"
+    dropbear_supervisor >>"${LOG}" 2>&1 &
+    worker=$!
+    echo "${worker}" > "${WORKER_PID}"
+    /usr/bin/boottrace dropbear_worker_started "pid=${worker}"
+    echo "Starting dropbear asynchronously: OK"
 }
 
 stop() {
-    if start-stop-daemon -K -q -p "${PID}"; then
-        echo "Stopping dropbear sshd: OK"
-    else
-        echo "Stopping dropbear sshd: FAIL"
-    fi
+    [ ! -s "${PID}" ] || kill "$(cat "${PID}")" 2>/dev/null || true
+    [ ! -s "${WORKER_PID}" ] || kill "$(cat "${WORKER_PID}")" 2>/dev/null || true
+    rm -f "${PID}" "${WORKER_PID}"
+    echo "Stopping dropbear sshd: OK"
 }
 
 case "$1" in
@@ -47,3 +230,5 @@ case "$1" in
   restart|reload) stop; start ;;
   *) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
 esac
+
+exit 0

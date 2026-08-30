@@ -48,7 +48,7 @@ class MusicPlayer(SoundPlayerBase):
             try:
                 import vlc
                 self.player.event_manager().event_detach(
-                    vlc.EventType.MediaPlayerEndReached, self._on_song_end)
+                    vlc.EventType.MediaPlayerEndReached)
             except Exception as exc:
                 print("MusicPlayer event cleanup failed: %s" % exc, flush=True)
             self._events_attached = False

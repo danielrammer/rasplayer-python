@@ -72,6 +72,15 @@ fi
     else
         echo "dropbear_process=not_running"
     fi
+    printf 'dropbear_key_dir_link='; readlink /etc/dropbear 2>/dev/null || echo not_symlink
+    ls -ldn /etc/dropbear /var/run/dropbear \
+        /etc/dropbear/dropbear_*_host_key 2>&1 || true
+    if [ -s /etc/dropbear/dropbear_ed25519_host_key ]; then
+        /usr/bin/dropbearkey -y \
+            -f /etc/dropbear/dropbear_ed25519_host_key 2>&1 | \
+            grep '^Fingerprint:' || true
+    fi
+    printf 'entropy_avail='; cat /proc/sys/kernel/random/entropy_avail 2>/dev/null || echo unknown
     netstat -ltn 2>&1 | grep -E '(^|[.:])22[[:space:]]' || echo "dropbear_port_22=not_listening"
     echo
     echo "--- recent wpa log ---"
