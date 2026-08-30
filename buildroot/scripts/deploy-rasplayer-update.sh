@@ -15,18 +15,18 @@ identity=${3:-}
 if [ -n "${identity}" ]; then
     ssh -i "${identity}" "${target}" \
         'rm -rf /home/dnl/work/rasplayer-update.upload && mkdir -p /home/dnl/work/rasplayer-update.upload/payload'
-    scp -i "${identity}" "${bundle}/manifest" "${bundle}/signature" \
+    scp -O -i "${identity}" "${bundle}/manifest" "${bundle}/signature" \
         "${target}:/home/dnl/work/rasplayer-update.upload/"
-    scp -i "${identity}" "${bundle}/payload/"* \
+    scp -O -i "${identity}" "${bundle}/payload/"* \
         "${target}:/home/dnl/work/rasplayer-update.upload/payload/"
     ssh -i "${identity}" "${target}" \
         'rm -rf /home/dnl/work/rasplayer-update.old; if [ -e /home/dnl/work/rasplayer-update ]; then mv /home/dnl/work/rasplayer-update /home/dnl/work/rasplayer-update.old; fi; mv /home/dnl/work/rasplayer-update.upload /home/dnl/work/rasplayer-update; rasplayer-service deploy'
 else
     ssh "${target}" \
         'rm -rf /home/dnl/work/rasplayer-update.upload && mkdir -p /home/dnl/work/rasplayer-update.upload/payload'
-    scp "${bundle}/manifest" "${bundle}/signature" \
+    scp -O "${bundle}/manifest" "${bundle}/signature" \
         "${target}:/home/dnl/work/rasplayer-update.upload/"
-    scp "${bundle}/payload/"* \
+    scp -O "${bundle}/payload/"* \
         "${target}:/home/dnl/work/rasplayer-update.upload/payload/"
     ssh "${target}" \
         'rm -rf /home/dnl/work/rasplayer-update.old; if [ -e /home/dnl/work/rasplayer-update ]; then mv /home/dnl/work/rasplayer-update /home/dnl/work/rasplayer-update.old; fi; mv /home/dnl/work/rasplayer-update.upload /home/dnl/work/rasplayer-update; rasplayer-service deploy'
