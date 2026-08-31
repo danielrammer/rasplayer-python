@@ -424,7 +424,7 @@ def _process_command(command, value):
         setPlayerMode(requested_mode, value["cancel"])
     elif command == "navigation_delta" and soundPlayer is not None:
         applied = soundPlayer.navigate(value)
-        if applied and playerMode == PlayerMode.ONLINE:
+        if applied:
             feedback.play("generic", source="navigation",
                           category="navigation")
     elif command == "play_pause" and soundPlayer is not None:
