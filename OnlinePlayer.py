@@ -89,6 +89,14 @@ class OnlinePlayer(SoundPlayerBase):
         # self.player.stop() # TODO: check if necessary
         return self._open(self.radios[self.currentRadio])
 
+    def navigate(self, offset):
+        """Apply a coalesced station offset with one network open."""
+        start = self.currentRadio if self.currentRadio >= 0 else 0
+        self.currentRadio = (start + offset) % self.numberOfRadios
+        print("ONLINE navigate offset=%d from=%d to=%d" %
+              (offset, start, self.currentRadio), flush=True)
+        return self._open(self.radios[self.currentRadio])
+
     def update(self):
         if self._open_started is None:
             return

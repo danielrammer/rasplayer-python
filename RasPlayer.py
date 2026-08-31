@@ -25,7 +25,9 @@ def startup_mark(label):
 startup_mark("python_entry")
 watchdog = WatchdogNotifier()
 
-from SoundPlayer import FeedbackPlayer, SoundPlayerBase
+from SoundPlayer import (
+    FeedbackPlayer, SoundPlayerBase, apply_generic_input,
+    route_generic_input)
 import glob
 import subprocess
 import RPi.GPIO as GPIO
@@ -169,6 +171,8 @@ mode_generation = 0
 mode_input_levels = {}
 last_mode_gpio_callback_at = {}
 last_owner_health_log = 0.0
+latest_mode_cancel = None
+mode_request_lock = threading.Lock()
 
 def enqueue_command(command, value=None):
     """Fast GPIO/VLC producer path; all state mutation happens in worker."""
@@ -177,6 +181,49 @@ def enqueue_command(command, value=None):
     if command_path is not None:
         print("INPUT command queue full; dropping %s" % command, flush=True)
     return False
+
+def enqueue_mode_command(mode):
+    """Submit latest-wins mode intent and cancel obsolete preparation work."""
+    global latest_mode_cancel
+    cancel = threading.Event()
+    request = {
+        "mode": PlayerMode(mode),
+        "cancel": cancel,
+        "input_at": time.monotonic(),
+    }
+    if command_path is None or not command_path.submit("mode", request):
+        return False
+    with mode_request_lock:
+        previous = latest_mode_cancel
+        latest_mode_cancel = cancel
+    if previous is not None:
+        previous.set()
+    return True
+
+def enqueue_generic_command(event):
+    """Route an explicit GPIO edge without losing category semantics."""
+    routed = route_generic_input(
+        event, playerMode.name, mode_state == "ACTIVE", mode_generation)
+    if routed is None:
+        print("INPUT generic_release_ignored index=%s channel=%s mode=%s "
+              "state=%s" %
+              (event["button"], event["channel"], playerMode.name,
+               mode_state), flush=True)
+        return True
+    command, value = routed
+    if command == "selection":
+        value["mode"] = playerMode
+    return enqueue_command(command, value)
+
+def dispatch_player_input(command, value=None):
+    """Route mode-owned callbacks without changing their lightweight contract."""
+    if command == "generic":
+        return enqueue_generic_command(value)
+    if command == "next":
+        return enqueue_command("navigation_delta", 1)
+    if command == "previous":
+        return enqueue_command("navigation_delta", -1)
+    return enqueue_command(command, value)
 
 def _mode_input_snapshot():
     return ((Input.INPUT_MUSIC_MODE, PlayerMode.MUSIC),
@@ -198,7 +245,7 @@ def _mode_gpio_callback(channel, requested_mode):
           (channel, requested_mode.name, callback_at, level,
            health["owner_alive"], health["heartbeat_age_ms"],
            health["queue_depth"], playerMode.name, mode_state), flush=True)
-    accepted = enqueue_command("mode", requested_mode)
+    accepted = enqueue_mode_command(requested_mode)
     health = command_path.health() if command_path is not None else health
     print("INPUT mode_enqueue channel=%d requested=%s uptime=%.6f "
           "accepted=%s queue_depth=%d" %
@@ -258,7 +305,7 @@ def _release_pygame_for_synth():
         print("SYNTH pygame_release_exception error=%r" % (exc,), flush=True)
 
 def _prepare_mode(mode, generation, requested_at, cleanup_done,
-                  wait_for_cleanup):
+                  wait_for_cleanup, cancel):
     """Prepare a backend without blocking serialized input/state ownership."""
     started = time.monotonic()
     player = None
@@ -274,10 +321,22 @@ def _prepare_mode(mode, generation, requested_at, cleanup_done,
                   (mode.name, generation,
                    (time.monotonic() - wait_started) * 1000.0,
                    cleanup_done.is_set()), flush=True)
+        if cancel.is_set():
+            print("MODE init_worker_cancelled mode=%s generation=%d "
+                  "stage=before_backend" % (mode.name, generation), flush=True)
+            return
         if mode == PlayerMode.SYNTH:
             _release_pygame_for_synth()
 
         vlc_instance, vlc_player = ensure_vlc()
+        if cancel.is_set():
+            print("MODE init_worker_cancelled mode=%s generation=%d "
+                  "stage=after_vlc" % (mode.name, generation), flush=True)
+            try:
+                vlc_player.release()
+            except Exception:
+                pass
+            return
         if mode == PlayerMode.MUSIC:
             from MusicPlayer import MusicPlayer
             player = MusicPlayer(vlc_instance, vlc_player, "./Sounds/Music/02")
@@ -307,6 +366,12 @@ def _prepare_mode(mode, generation, requested_at, cleanup_done,
           "duration_ms=%.3f result=%s" %
           (mode.name, generation, completed, (completed - started) * 1000.0,
            "error" if error else "ok"), flush=True)
+    if cancel.is_set():
+        print("MODE init_worker_superseded mode=%s generation=%d" %
+              (mode.name, generation), flush=True)
+        if player is not None:
+            _cleanup_mode_backend(player, mode, "superseded_worker")
+        return
     enqueue_command("_mode_ready", {
         "mode": mode, "generation": generation, "player": player,
         "error": error, "requested_at": requested_at,
@@ -350,35 +415,52 @@ def _process_command(command, value):
     if command == "_mode_ready":
         _accept_mode_ready(value)
     elif command == "mode":
+        requested_mode = value["mode"]
         print("MODE request requested=%s current_mode=%s state=%s "
-              "generation=%d uptime=%.6f" %
-              (PlayerMode(value).name, playerMode.name, mode_state,
-               mode_generation, time.monotonic()), flush=True)
-        setPlayerMode(value)
-    elif command == "next" and soundPlayer is not None:
-        soundPlayer.playNext()
-        if playerMode == PlayerMode.ONLINE:
-            feedback.play("generic")
-    elif command == "previous" and soundPlayer is not None:
-        soundPlayer.playPrevious()
-        if playerMode == PlayerMode.ONLINE:
-            feedback.play("generic")
+              "generation=%d uptime=%.6f input_latency_ms=%.3f" %
+              (requested_mode.name, playerMode.name, mode_state,
+               mode_generation, time.monotonic(),
+               (time.monotonic() - value["input_at"]) * 1000.0), flush=True)
+        setPlayerMode(requested_mode, value["cancel"])
+    elif command == "navigation_delta" and soundPlayer is not None:
+        applied = soundPlayer.navigate(value)
+        if applied and playerMode == PlayerMode.ONLINE:
+            feedback.play("generic", source="navigation",
+                          category="navigation")
     elif command == "play_pause" and soundPlayer is not None:
         if soundPlayer.playPausePlayer():
             if playerMode in (PlayerMode.MUSIC, PlayerMode.ONLINE):
                 feedback.play("generic")
-    elif command == "volume_up":
-        volumeUp(None)
-    elif command == "volume_down":
-        volumeDown(None)
+    elif command == "volume_delta":
+        applyVolumeDelta(value)
+    elif command == "selection":
+        if (value["generation"] != mode_generation or
+            value["mode"] != playerMode or mode_state != "ACTIVE" or
+            soundPlayer is None):
+            print("INPUT selection_superseded button=%s requested_mode=%s "
+                  "requested_generation=%d current_mode=%s "
+                  "current_generation=%d state=%s" %
+                  (value["button"], value["mode"].name, value["generation"],
+                   playerMode.name, mode_generation, mode_state), flush=True)
+        else:
+            result = soundPlayer.buttonDown(value["button"])
+            if result is not False:
+                feedback.play("generic", source="selection",
+                              category="selection")
     elif command == "generic":
         if soundPlayer is None:
-            print("INPUT generic_skipped index=%s reason=no_active_player "
-                  "mode=%s state=%s" %
-                  (value, playerMode.name, mode_state), flush=True)
+            print("INPUT generic_skipped index=%s edge=%s "
+                  "reason=no_active_player mode=%s state=%s" %
+                  (value["button"], value["edge"], playerMode.name,
+                   mode_state), flush=True)
         else:
-            result = soundPlayer.buttonDown(value)
-            if (result is not False and
+            action, result = apply_generic_input(
+                soundPlayer, playerMode.name, value)
+            print("INPUT generic_applied index=%s edge=%s action=%s "
+                  "mode=%s result=%r" %
+                  (value["button"], value["edge"], action, playerMode.name,
+                   result), flush=True)
+            if (action == "press" and result is not False and
                 playerMode in (PlayerMode.MUSIC, PlayerMode.ONLINE)):
                 feedback.play("generic")
 
@@ -406,9 +488,12 @@ def _command_tick():
     if playerMode == PlayerMode.SYNTH and now - last_owner_health_log >= 5.0:
         health = command_path.health()
         print("COMMAND owner_health uptime=%.6f mode=%s state=%s "
-              "queue_depth=%d heartbeat_age_ms=%.3f owner_alive=%s" %
+              "queue_depth=%d heartbeat_age_ms=%.3f owner_alive=%s "
+              "coalesced=%d cancelled=%d superseded=%d dropped=%d" %
               (now, playerMode.name, mode_state, health["queue_depth"],
-               health["heartbeat_age_ms"], health["owner_alive"]), flush=True)
+               health["heartbeat_age_ms"], health["owner_alive"],
+               health["coalesced"], health["cancelled"],
+               health["superseded"], health["dropped"]), flush=True)
         last_owner_health_log = now
     if soundPlayer is not None and hasattr(soundPlayer, "update"):
         soundPlayer.update()
@@ -469,8 +554,24 @@ def volumeDown(channel):
     feedback.play("volume_down", source="volume_down")
     setVolume(currentVolume)
 
+def applyVolumeDelta(delta):
+    """Apply one clamped volume target for a coalesced input burst."""
+    global currentVolume
+    previous = currentVolume
+    currentVolume = max(50, min(100, currentVolume + delta))
+    print("VOLUME apply_delta delta=%d previous=%d target=%d" %
+          (delta, previous, currentVolume), flush=True)
+    if currentVolume == previous:
+        if delta > 0 and currentVolume == 100:
+            feedback.play("volume_up", count=2, interval=0.1,
+                          source="volume_up_max", category="volume")
+        return
+    feedback.play("volume_up" if currentVolume > previous else "volume_down",
+                  source="volume_coalesced", category="volume")
+    setVolume(currentVolume)
+
 # TODO: set this by defined GOIO inputs (bananas)
-def setPlayerMode(mode):
+def setPlayerMode(mode, cancel=None):
     global playerMode
     global soundPlayer
     global mode_state
@@ -478,6 +579,7 @@ def setPlayerMode(mode):
     global samplePlayer
 
     mode = PlayerMode(mode)
+    cancel = cancel or threading.Event()
 
     if (playerMode == mode and mode_state == "ACTIVE"):
         print("MODE transition_rejected requested=%s reason=already_active "
@@ -498,7 +600,7 @@ def setPlayerMode(mode):
           (mode.name, old_mode.name, mode_state, generation, requested_at),
           flush=True)
     feedback.play("generic", source="mode_%s_generation_%d" %
-                  (mode.name, generation))
+                  (mode.name, generation), category="mode")
     cleanup_done = None
     if old_player is not None:
         mode_state = "STOPPING"
@@ -523,7 +625,8 @@ def setPlayerMode(mode):
     wait_for_cleanup = old_mode == PlayerMode.SYNTH or mode == PlayerMode.SYNTH
     threading.Thread(
         target=_prepare_mode,
-        args=(mode, generation, requested_at, cleanup_done, wait_for_cleanup),
+        args=(mode, generation, requested_at, cleanup_done, wait_for_cleanup,
+              cancel),
         name="rasplayer-mode-init-%d" % generation,
         daemon=True).start()
 
@@ -558,16 +661,16 @@ for generic_input in SoundPlayerBase.inputs:
 
 # -------- GPIO input functions --------
 def inputForward(channel):
-    enqueue_command("next")
+    enqueue_command("navigation_delta", 1)
 
 def inputPrevious(channel):
-    enqueue_command("previous")
+    enqueue_command("navigation_delta", -1)
 
 def playPausePlayer(self):
     enqueue_command("play_pause")
 
 def inputModeChange(channel):
-    enqueue_command("mode", (playerMode + 1) % len(PlayerMode))
+    enqueue_mode_command((playerMode + 1) % len(PlayerMode))
 
 # -------- program start --------
 # default volume on startup
@@ -593,8 +696,8 @@ GPIO.add_event_detect(Input.INPUT_FWD, GPIO.RISING, callback=inputForward, bounc
 GPIO.add_event_detect(Input.INPUT_PRV, GPIO.RISING, callback=inputPrevious, bouncetime=500)
 
 # GPIO.add_event_detect(Input.INPUT_MODE_CHG, GPIO.RISING, callback=inputModeChange, bouncetime=300)
-GPIO.add_event_detect(Input.INPUT_VOL_UP, GPIO.RISING, callback=lambda x: enqueue_command("volume_up"), bouncetime=500)
-GPIO.add_event_detect(Input.INPUT_VOL_DOWN, GPIO.RISING, callback=lambda x: enqueue_command("volume_down"), bouncetime=500)
+GPIO.add_event_detect(Input.INPUT_VOL_UP, GPIO.RISING, callback=lambda x: enqueue_command("volume_delta", 10), bouncetime=500)
+GPIO.add_event_detect(Input.INPUT_VOL_DOWN, GPIO.RISING, callback=lambda x: enqueue_command("volume_delta", -10), bouncetime=500)
 
 GPIO.add_event_detect(Input.INPUT_MUSIC_MODE, GPIO.RISING, callback=lambda channel: _mode_gpio_callback(channel, PlayerMode.MUSIC), bouncetime=1000)
 GPIO.add_event_detect(Input.INPUT_ONLINE_MODE, GPIO.RISING, callback=lambda channel: _mode_gpio_callback(channel, PlayerMode.ONLINE), bouncetime=1000)
@@ -602,12 +705,19 @@ GPIO.add_event_detect(Input.INPUT_ONLINE_MODE, GPIO.RISING, callback=lambda chan
 GPIO.add_event_detect(Input.INPUT_INSTRUMENT_MODE, GPIO.RISING, callback=lambda channel: _mode_gpio_callback(channel, PlayerMode.INSTRUMENT), bouncetime=1000)
 
 GPIO.add_event_detect(Input.INPUT_SYNTH_MODE, GPIO.RISING, callback=lambda channel: _mode_gpio_callback(channel, PlayerMode.SYNTH), bouncetime=1000)
-SoundPlayerBase.input_dispatcher = enqueue_command
+SoundPlayerBase.input_dispatcher = dispatch_player_input
 for generic_input in SoundPlayerBase.inputs:
     GPIO.add_event_detect(
-        generic_input, GPIO.RISING,
+        generic_input, GPIO.BOTH,
         callback=SoundPlayerBase._generic_callback, bouncetime=190)
-command_path = SerializedCommandPath(_process_command, _command_tick)
+command_path = SerializedCommandPath(
+    _process_command, _command_tick,
+    coalesce={
+        "volume_delta": "sum",
+        "navigation_delta": "sum",
+        "selection": "latest",
+        "mode": "latest",
+    })
 command_path.start()
 startup_mark("callbacks_registered")
 startup_mark("LOCAL_READY")

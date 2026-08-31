@@ -107,6 +107,17 @@ class MusicPlayer(SoundPlayerBase):
 
         self.is_playing = True
 
+    def navigate(self, offset):
+        """Apply a coalesced navigation offset with one VLC open."""
+        if not self.filelist:
+            return False
+        start = self.currentFileNum if self.currentFileNum >= 0 else 0
+        self.currentFileNum = (start + offset) % self.numberOfItemsInList
+        print("MUSIC navigate offset=%d from=%d to=%d" %
+              (offset, start, self.currentFileNum), flush=True)
+        self.playSongNumber(self.currentFileNum)
+        return True
+
     def playSongNumber(self, number):
         print("MusicPlayer playSongNumber: " + str(number))
         if number < 0 or number >= self.numberOfItemsInList:

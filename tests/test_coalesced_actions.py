@@ -2,7 +2,9 @@ import threading
 import time
 import unittest
 
-from SoundPlayer import FeedbackPlayer, SoundPlayerBase
+from SoundPlayer import (
+    FeedbackPlayer, SoundPlayerBase, apply_generic_input,
+    make_generic_input_event, route_generic_input)
 
 
 class _FakeMediaPlayer:
@@ -46,6 +48,88 @@ class _FakeProcess:
 
 
 class CoalescedActionTests(unittest.TestCase):
+    class _EdgePlayer:
+        def __init__(self):
+            self.actions = []
+
+        def buttonDown(self, button):
+            self.actions.append(("press_action", button))
+            return True
+
+        def buttonUp(self, button):
+            self.actions.append(("release_action", button))
+            return True
+
+    class _SynthEdgePlayer(_EdgePlayer):
+        def buttonDown(self, button):
+            self.actions.append(("note_on", button))
+            return True
+
+        def buttonUp(self, button):
+            self.actions.append(("note_off", button))
+            return True
+
+    @staticmethod
+    def event(pressed, button=2):
+        return {
+            "button": button,
+            "channel": 6,
+            "level": 1 if pressed else 0,
+            "pressed": pressed,
+            "edge": "press" if pressed else "release",
+            "input_at": 1.0,
+        }
+
+    def test_callback_payload_captures_press_and_release_level(self):
+        inputs = [11, 5, 6, 19, 16]
+        press = make_generic_input_event(6, inputs, lambda channel: 1, 10.0)
+        release = make_generic_input_event(6, inputs, lambda channel: 0, 11.0)
+        self.assertEqual(
+            (press["button"], press["edge"], press["level"], press["input_at"]),
+            (2, "press", 1, 10.0))
+        self.assertEqual(
+            (release["button"], release["edge"], release["level"],
+             release["input_at"]),
+            (2, "release", 0, 11.0))
+
+    def test_sampler_press_release_triggers_exactly_once(self):
+        player = self._EdgePlayer()
+        for event in (self.event(True), self.event(False)):
+            command, payload = route_generic_input(
+                event, "INSTRUMENT", True, 4)
+            self.assertEqual(command, "generic")
+            apply_generic_input(player, "INSTRUMENT", payload)
+        self.assertEqual(player.actions, [("press_action", 2)])
+
+    def test_music_playlist_press_release_selects_exactly_once(self):
+        player = self._EdgePlayer()
+        routed = [
+            route_generic_input(event, "MUSIC", True, 7)
+            for event in (self.event(True), self.event(False))]
+        self.assertEqual(routed[0][0], "selection")
+        self.assertIsNone(routed[1])
+        player.buttonDown(routed[0][1]["button"])
+        self.assertEqual(player.actions, [("press_action", 2)])
+
+    def test_online_channel_press_release_selects_exactly_once(self):
+        player = self._EdgePlayer()
+        routed = [
+            route_generic_input(event, "ONLINE", True, 8)
+            for event in (self.event(True), self.event(False))]
+        self.assertEqual(routed[0][0], "selection")
+        self.assertIsNone(routed[1])
+        player.buttonDown(routed[0][1]["button"])
+        self.assertEqual(player.actions, [("press_action", 2)])
+
+    def test_synth_press_release_is_note_on_then_note_off(self):
+        player = self._SynthEdgePlayer()
+        for event in (self.event(True), self.event(False)):
+            command, payload = route_generic_input(event, "SYNTH", True, 9)
+            self.assertEqual(command, "generic")
+            apply_generic_input(player, "SYNTH", payload)
+        self.assertEqual(
+            player.actions, [("note_on", 2), ("note_off", 2)])
+
     def test_base_navigation_opens_only_final_item(self):
         backend = _FakeMediaPlayer()
         player = SoundPlayerBase(_FakeVlc(), backend, "")

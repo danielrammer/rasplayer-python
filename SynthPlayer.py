@@ -140,6 +140,7 @@ class SynthPlayer(SoundPlayerBase):
         self._last_control_log = 0.0
         self._last_control_midi = None
         self._button_latched_until = 0.0
+        self._pressed_buttons = set()
 
         import fluidsynth
         init_started = time.monotonic()
@@ -319,9 +320,16 @@ class SynthPlayer(SoundPlayerBase):
         if self.in_range:
             self.last_valid_distance = distance
         now = time.monotonic()
-        physical_button = any(GPIO.input(pin) for pin in self.generic_inputs)
+        physical_pressed = {
+            index for index, pin in enumerate(self.generic_inputs)
+            if GPIO.input(pin)}
+        # Polling remains the fallback if RPi.GPIO debounce suppresses a very
+        # short release edge; an explicit release still stops immediately.
+        self._pressed_buttons.intersection_update(physical_pressed)
+        physical_button = bool(physical_pressed)
         event_latched = now < self._button_latched_until
-        self.button_held = physical_button or event_latched
+        self.button_held = (
+            physical_button or bool(self._pressed_buttons) or event_latched)
         if not self.button_held:
             self._note_off("button_released")
             return
@@ -368,6 +376,7 @@ class SynthPlayer(SoundPlayerBase):
             source = "generic_default_distance"
         valid_age = now - latest_valid_at if latest_valid_at else -1.0
         pin_level = GPIO.input(self.generic_inputs[button_index])
+        self._pressed_buttons.add(button_index)
         self._button_latched_until = now + 0.30
         print("SYNTH generic index=%d instrument=%d pin=%d level=%d "
               "raw_distance=%.2f distance_valid=%s control_distance=%.2f "
@@ -377,6 +386,16 @@ class SynthPlayer(SoundPlayerBase):
                distance_valid, control_distance, valid_age, program_result),
               flush=True)
         self._note_on(control_distance, source, raw_distance=distance)
+
+    def buttonUp(self, buttonNumber):
+        button_index = buttonNumber % len(self.generic_inputs)
+        self._pressed_buttons.discard(button_index)
+        self._button_latched_until = 0.0
+        print("SYNTH generic_release index=%d remaining=%d" %
+              (button_index, len(self._pressed_buttons)), flush=True)
+        if not self._pressed_buttons:
+            self._note_off("button_released_event")
+        return True
 
     def stop(self):
         cleanup_started = time.monotonic()

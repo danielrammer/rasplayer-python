@@ -1,17 +1,58 @@
 #!/usr/bin/python
 import glob
-import queue
+from collections import deque
 import subprocess
 import threading
 import time
 from enum import IntEnum
 
 
+def make_generic_input_event(channel, inputs, level_reader, observed_at=None):
+    """Capture the GPIO level so press/release semantics survive queueing."""
+    try:
+        button = inputs.index(channel)
+    except ValueError:
+        return None
+    level = 1 if level_reader(channel) else 0
+    return {
+        "button": button,
+        "channel": int(channel),
+        "level": level,
+        "pressed": level == 1,
+        "edge": "press" if level else "release",
+        "input_at": time.monotonic() if observed_at is None else observed_at,
+    }
+
+
+def route_generic_input(event, mode_name, active, generation):
+    """Route press-only selectors separately from stateful generic buttons."""
+    if active and mode_name in ("MUSIC", "ONLINE"):
+        if not event["pressed"]:
+            return None
+        selection = dict(event)
+        selection["mode"] = mode_name
+        selection["generation"] = generation
+        return "selection", selection
+    return "generic", event
+
+
+def apply_generic_input(player, mode_name, event):
+    """Apply one explicit edge according to the active mode's semantics."""
+    if event["pressed"]:
+        return "press", player.buttonDown(event["button"])
+    if mode_name == "SYNTH" and hasattr(player, "buttonUp"):
+        return "release", player.buttonUp(event["button"])
+    return "release_ignored", False
+
+
 class FeedbackPlayer:
     """Serialize short mpg123 UI sounds without occupying the owner thread."""
 
     def __init__(self, process_factory=None):
-        self._requests = queue.Queue(maxsize=16)
+        self._requests = deque()
+        self._request_condition = threading.Condition()
+        self._max_requests = 16
+        self._superseded = 0
         self._stop = threading.Event()
         self._process_lock = threading.Lock()
         self._process = None
@@ -20,7 +61,8 @@ class FeedbackPlayer:
             target=self._run, name="rasplayer-feedback", daemon=True)
         self._thread.start()
 
-    def play(self, name, count=1, interval=0.0, source="action"):
+    def play(self, name, count=1, interval=0.0, source="action",
+             category=None):
         path = {
             "generic": "./Sounds/System/0/generic.mp3",
             "volume_up": "./Sounds/System/0/vol-up.mp3",
@@ -29,29 +71,43 @@ class FeedbackPlayer:
         if path is None:
             print("FEEDBACK rejected name=%s reason=unknown" % name, flush=True)
             return False
-        try:
-            enqueued_at = time.monotonic()
-            self._requests.put_nowait((name, path, count, interval,
-                                       enqueued_at, source))
+        enqueued_at = time.monotonic()
+        request = (name, path, count, interval, enqueued_at, source, category)
+        with self._request_condition:
+            if category is not None:
+                for index, pending in enumerate(self._requests):
+                    if pending[6] == category:
+                        self._requests[index] = request
+                        self._superseded += 1
+                        print("FEEDBACK supersede category=%s name=%s "
+                              "source=%s depth=%d superseded=%d" %
+                              (category, name, source, len(self._requests),
+                               self._superseded), flush=True)
+                        self._request_condition.notify()
+                        return True
+            if len(self._requests) >= self._max_requests:
+                print("FEEDBACK drop name=%s reason=queue_full" % name,
+                      flush=True)
+                return False
+            self._requests.append(request)
             print("FEEDBACK enqueue name=%s source=%s uptime=%.6f count=%d "
-                  "depth=%d" %
+                  "depth=%d category=%s" %
                   (name, source, enqueued_at, count,
-                   self._requests.qsize()), flush=True)
+                   len(self._requests), category), flush=True)
+            self._request_condition.notify()
             return True
-        except queue.Full:
-            print("FEEDBACK drop name=%s reason=queue_full" % name, flush=True)
-            return False
 
     def _run(self):
         while not self._stop.is_set():
-            try:
-                request = self._requests.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            if request is None:
-                self._requests.task_done()
-                break
-            name, path, count, interval, enqueued_at, source = request
+            with self._request_condition:
+                if not self._requests and not self._stop.is_set():
+                    self._request_condition.wait(0.1)
+                if self._stop.is_set():
+                    break
+                if not self._requests:
+                    continue
+                request = self._requests.popleft()
+            name, path, count, interval, enqueued_at, source, category = request
             try:
                 for index in range(count):
                     if self._stop.is_set():
@@ -87,8 +143,6 @@ class FeedbackPlayer:
             except Exception as exc:
                 print("FEEDBACK exception name=%s error=%r" % (name, exc),
                       flush=True)
-            finally:
-                self._requests.task_done()
 
     def close(self):
         self._stop.set()
@@ -96,10 +150,8 @@ class FeedbackPlayer:
             process = self._process
         if process is not None and process.poll() is None:
             process.terminate()
-        try:
-            self._requests.put_nowait(None)
-        except queue.Full:
-            pass
+        with self._request_condition:
+            self._request_condition.notify_all()
         self._thread.join(timeout=0.5)
 
 class SoundPlayerBase:
@@ -146,14 +198,12 @@ class SoundPlayerBase:
 
     @classmethod
     def _generic_callback(cls, channel):
-        # GPIO supplies only the channel number; map it without touching the
-        # active player.  The owner thread performs the actual button action.
-        try:
-            button = cls.inputs.index(channel)
-        except ValueError:
-            return
-        if cls.input_dispatcher is not None:
-            cls.input_dispatcher("generic", button)
+        # Capture the physical level in the callback. The owner decides
+        # whether this edge is a one-shot press or Synth state transition.
+        import RPi.GPIO as GPIO
+        event = make_generic_input_event(channel, cls.inputs, GPIO.input)
+        if event is not None and cls.input_dispatcher is not None:
+            cls.input_dispatcher("generic", event)
 
     # TODO: make 2D array to allow more sounds per type
     def setList(self, path):
@@ -206,6 +256,21 @@ class SoundPlayerBase:
         self.player.set_media(media)
         self.player.play()
         self.is_playing = True
+
+    def navigate(self, offset):
+        """Apply a coalesced list offset with one media open."""
+        if not self.filelist:
+            return False
+        start = self.currentFileNum if self.currentFileNum >= 0 else 0
+        self.currentFileNum = (start + offset) % self.numberOfItemsInList
+        self.currentSong = self.filelist[self.currentFileNum]
+        print("PLAYER navigate offset=%d from=%d to=%d" %
+              (offset, start, self.currentFileNum), flush=True)
+        media = self.vlcInstance.media_new(self.currentSong)
+        self.player.set_media(media)
+        self.player.play()
+        self.is_playing = True
+        return True
 
     def playPausePlayer(self): 
         import vlc

@@ -84,7 +84,18 @@ class SamplePlayer(SoundPlayerBase):
         self.setList(f"{self.activeSoundFileRoot}/{self.currentSampleSet}/*.mp3")
         # rebuild samples (don't re-init mixer)
         self.samples = [pygame.mixer.Sound(file) for file in self.filelist]
-        
+
+    def navigate(self, offset):
+        """Load only the final sample set requested by a navigation burst."""
+        self.currentSampleSet = (
+            self.currentSampleSet + offset) % NUMBER_OF_SAMPLE_SETS
+        print("SAMPLE navigate offset=%d to=%d" %
+              (offset, self.currentSampleSet), flush=True)
+        self.setList(
+            f"{self.activeSoundFileRoot}/{self.currentSampleSet}/*.mp3")
+        self.samples = [pygame.mixer.Sound(file) for file in self.filelist]
+        return True
+
     # fire sound file
     def buttonDown(self, buttonNumber):
         print("SamplePlayer pressed generic button " + str(buttonNumber))
@@ -105,4 +116,3 @@ class SamplePlayer(SoundPlayerBase):
             self.samples[soundNumber].play()
         else:
             print("No sound files loaded!")
-        
