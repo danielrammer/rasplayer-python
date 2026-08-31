@@ -23,11 +23,11 @@ system service -> RasPlayer.py
 
 **Verified:** The current startup path is deliberately split at `LOCAL_READY`:
 
-1. Record a monotonic `python_entry` marker and import only GPIO, pygame/sample support, and standard-library control code. VLC, mode classes, FluidSynth, numpy, and asyncio are not imported here.
+1. Record a monotonic `python_entry` marker and import only GPIO, pygame/sample support, and standard-library control code. VLC, mode classes, FluidSynth, and asyncio are not imported here.
 2. Register signal handlers, select BCM numbering, configure fixed GPIO pins, and emit `gpio_ready`.
 3. Set mixer volume with `amixer -c 0 sset PCM <volume>%` (initially 80%). Launch `mpg123` for `TurnOn.mp3` and verify it remains running; pygame is not imported on this path.
 4. Register rising-edge events for global controls and mode selectors. `LOCAL_READY` means physical controls are registered and the mpg123 startup sound has been successfully triggered. Pygame is loaded on first volume/sample-mode use. No content mode is selected (`PlayerMode.NONE`).
-5. On a mode selection, the owner records a generation and starts lazy backend preparation off-thread. The shared VLC instance is created once, each mode receives a dedicated media player, and only the current generation may become active. FluidSynth and numpy remain Synth-only.
+5. On a mode selection, the owner records a generation and starts lazy backend preparation off-thread. The shared VLC instance is created once, each mode receives a dedicated media player, and only the current generation may become active. FluidSynth remains Synth-only.
 
 The markers are concise `STARTUP <name> elapsed=<seconds>` lines using
 `time.monotonic()`. Detailed measured cold/warm timings and first-use mode
@@ -42,7 +42,6 @@ costs are recorded in `docs/pi-boot-optimization.md`.
 | VLC/libVLC | `ensure_vlc()` called by a selected non-system mode | No |
 | Mode classes | Background mode-preparation worker | No |
 | FluidSynth | `SynthPlayer.__init__` on preparation worker | No |
-| numpy | Inside `SynthPlayer.freq_to_midi()` | No |
 | queue/threading | Music mode constructor/event callback | No |
 
 **Verified:** Relative media paths are resolved from the working directory. The documented service uses `/home/dnl/RasPlayer`, so a deployment must retain that directory structure and the `Sounds` tree.
@@ -77,9 +76,17 @@ costs are recorded in `docs/pi-boot-optimization.md`.
 | Five generic buttons | 11, 5, 6, 19, 16 | 23, 29, 31, 35, 36 |
 | Status LED output | 26 | 37 |
 
-**Verified:** Global controls have 500 ms software bounce times; mode selectors use 1,000 ms and generic buttons use 190 ms. Generic GPIO callbacks are registered once by `RasPlayer.py` and only enqueue a button index. The owner dispatches to the currently active mode.
+**Verified:** Global controls have 500 ms software bounce times; mode selectors use 1,000 ms and generic buttons use 190 ms. Generic GPIO callbacks are registered once by `RasPlayer.py` and only enqueue a button index. The owner dispatches to the currently active mode. Synth handles the resulting command directly: it selects the instrument, logs the current distance gate, and issues `noteon()` with a short event latch so a valid rising-edge command cannot disappear before the next level poll. Commands received while a mode is still initializing are explicitly logged as skipped.
 
-**Verified:** The ultrasonic routine sends a 10 microsecond trigger pulse and polls echo with 50 ms start and 20 ms end limits. It now returns `-1` on timeout and rate-limits timeout logging; slow tick duration is also recorded.
+**Verified from source:** Synth owns a dedicated ultrasonic worker. It accesses
+`/dev/gpiomem` through the same GPIO register path as the privileged hardware
+diagnostic, sends a 10 microsecond trigger, applies 30 ms bounds to both echo
+edges, and waits 100 ms after each measurement—the intentional playable
+cadence from historical commit `5d73c6e`. The serialized command-owner
+tick only reads the latest sample. Timeouts and invalid samples are
+rate-limited; only distances in the 5–35 cm Synth control range can drive a
+note. Valid control distance is quantized into the historical 2 cm/half-tone
+steps; invalid samples retain rather than replace the last valid step.
 
 **Open question:** The exact ultrasonic module, voltage-level conversion on the echo line, pull-down/up circuitry, LED circuit, audio adapter/DAC, amplifier, and button wiring are not identified in the repository. The trigger/echo naming is consistent with an HC-SR04-style sensor, but that is an inference only.
 
@@ -97,7 +104,7 @@ costs are recorded in `docs/pi-boot-optimization.md`.
 
 ## Concurrency and process interaction
 
-**Verified:** GPIO and VLC callbacks enqueue timestamped commands. One daemon owner serializes active state, player calls, generation acceptance and `update()`; preparation/cleanup workers never directly replace active state. Handler failures are isolated. See `docs/stability-and-event-model.md`.
+**Verified:** GPIO and VLC callbacks enqueue timestamped commands. One daemon owner serializes active state, player calls, generation acceptance and `update()`; preparation/cleanup workers never directly replace active state. The Synth ultrasonic worker publishes only its latest measured distance under a lock and never mutates active mode ownership. Handler failures are isolated. See `docs/stability-and-event-model.md`.
 
 ## Test coverage and history
 

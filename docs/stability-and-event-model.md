@@ -12,7 +12,21 @@ The mode lifecycle remains `NONE`, `INITIALIZING`, `ACTIVE`, `STOPPING`, or `FAI
 
 ## Remaining physical risks
 
-Online state polling and Synth ultrasonic polling remain owner-thread ticks. Online logs every VLC state transition and an eight-second open failure/timeout without synchronously stopping the player. Ultrasonic start/end waits remain bounded at 50/20 ms and return `-1` on timeout; ticks of at least 25 ms are logged. Actual ALSA release timing, station playback, sensor behavior, and generation cancellation require Pi validation.
+Online state polling remains an owner-thread tick. Online logs every VLC state
+transition and an eight-second open failure/timeout without synchronously
+stopping the player. Synth ultrasonic polling now runs on a mode-owned worker
+with 30 ms edge bounds and a 100 ms inter-measurement pause; the owner reads the
+latest sample without waiting. Worker shutdown is bounded and participates in
+the existing off-thread Synth cleanup. Physical hand/pitch response and
+repeated post-change Synth transitions still require Pi validation.
+
+**Pi-verified 2026-08-31:** A generic Synth event now calls FluidSynth
+`program_select()` and `noteon()` directly on the serialized owner. Both
+returned `0` on the physical Pi. The prior successful `generic` command did
+not imply a note: during initialization it silently had no active player, and
+after initialization `buttonDown()` changed only the program while a later
+tick could suppress the note for an invalid sensor sample. Both skip/call
+paths are now explicit in diagnostics.
 
 ## Test and deployment status
 

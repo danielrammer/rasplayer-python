@@ -159,19 +159,47 @@ currentSong = 0
 currentVolume = 80
 soundPlayer = None
 playerMode = PlayerMode.NONE
-distance_counter = 0
 mode_state = "NONE"
 command_path = None
 mode_generation = 0
-ultrasonic_timeout_count = 0
-ultrasonic_last_timeout_log = 0.0
+mode_input_levels = {}
+last_mode_gpio_callback_at = {}
+last_owner_health_log = 0.0
 
 def enqueue_command(command, value=None):
     """Fast GPIO/VLC producer path; all state mutation happens in worker."""
     if command_path is not None and command_path.submit(command, value):
-        return
+        return True
     if command_path is not None:
         print("INPUT command queue full; dropping %s" % command, flush=True)
+    return False
+
+def _mode_input_snapshot():
+    return ((Input.INPUT_MUSIC_MODE, PlayerMode.MUSIC),
+            (Input.INPUT_ONLINE_MODE, PlayerMode.ONLINE),
+            (Input.INPUT_INSTRUMENT_MODE, PlayerMode.INSTRUMENT),
+            (Input.INPUT_SYNTH_MODE, PlayerMode.SYNTH))
+
+def _mode_gpio_callback(channel, requested_mode):
+    """Record the physical edge before submitting lightweight owner work."""
+    callback_at = time.monotonic()
+    last_mode_gpio_callback_at[channel] = callback_at
+    level = GPIO.input(channel)
+    health = (command_path.health() if command_path is not None else {
+        "owner_alive": False, "queue_depth": -1,
+        "heartbeat_age_ms": -1.0, "last_dequeue_age_ms": -1.0})
+    print("INPUT mode_gpio_edge channel=%d requested=%s uptime=%.6f level=%d "
+          "owner_alive=%s owner_heartbeat_age_ms=%.3f queue_depth=%d "
+          "current_mode=%s state=%s" %
+          (channel, requested_mode.name, callback_at, level,
+           health["owner_alive"], health["heartbeat_age_ms"],
+           health["queue_depth"], playerMode.name, mode_state), flush=True)
+    accepted = enqueue_command("mode", requested_mode)
+    health = command_path.health() if command_path is not None else health
+    print("INPUT mode_enqueue channel=%d requested=%s uptime=%.6f "
+          "accepted=%s queue_depth=%d" %
+          (channel, requested_mode.name, time.monotonic(), accepted,
+           health["queue_depth"]), flush=True)
 
 def _stop_player(player):
     if player is None:
@@ -260,7 +288,9 @@ def _prepare_mode(mode, generation, requested_at, cleanup_done,
             player = OnlinePlayer(vlc_instance, vlc_player, "")
         elif mode == PlayerMode.SYNTH:
             from SynthPlayer import SynthPlayer
-            player = SynthPlayer(vlc_instance, vlc_player, "", get_distance)
+            player = SynthPlayer(
+                vlc_instance, vlc_player, "",
+                Input.INPUT_SONIC_TRIGGER, Input.INPUT_SONIC_ECHO)
     except Exception as exc:
         error = "%r\n%s" % (exc, traceback.format_exc())
         if player is None and vlc_player is not None:
@@ -316,6 +346,10 @@ def _process_command(command, value):
     if command == "_mode_ready":
         _accept_mode_ready(value)
     elif command == "mode":
+        print("MODE request requested=%s current_mode=%s state=%s "
+              "generation=%d uptime=%.6f" %
+              (PlayerMode(value).name, playerMode.name, mode_state,
+               mode_generation, time.monotonic()), flush=True)
         setPlayerMode(value)
     elif command == "next" and soundPlayer is not None:
         soundPlayer.playNext()
@@ -327,16 +361,42 @@ def _process_command(command, value):
         volumeUp(None)
     elif command == "volume_down":
         volumeDown(None)
-    elif command == "generic" and soundPlayer is not None:
-        soundPlayer.buttonDown(value)
+    elif command == "generic":
+        if soundPlayer is None:
+            print("INPUT generic_skipped index=%s reason=no_active_player "
+                  "mode=%s state=%s" %
+                  (value, playerMode.name, mode_state), flush=True)
+        else:
+            soundPlayer.buttonDown(value)
 
 def _command_tick():
     if shutting_down:
         return
-    global startup_process
+    global startup_process, last_owner_health_log
     if startup_process is not None and startup_process.poll() is not None:
         startup_process = None
     watchdog.heartbeat()
+    now = time.monotonic()
+    for channel, requested_mode in _mode_input_snapshot():
+        level = GPIO.input(channel)
+        previous = mode_input_levels.get(channel, level)
+        if level != previous:
+            callback_age_ms = (
+                (now - last_mode_gpio_callback_at[channel]) * 1000.0
+                if channel in last_mode_gpio_callback_at else -1.0)
+            print("INPUT mode_gpio_level channel=%d requested=%s edge=%s "
+                  "uptime=%.6f callback_age_ms=%.3f current_mode=%s state=%s" %
+                  (channel, requested_mode.name,
+                   "rising" if level else "falling", now, callback_age_ms,
+                   playerMode.name, mode_state), flush=True)
+        mode_input_levels[channel] = level
+    if playerMode == PlayerMode.SYNTH and now - last_owner_health_log >= 5.0:
+        health = command_path.health()
+        print("COMMAND owner_health uptime=%.6f mode=%s state=%s "
+              "queue_depth=%d heartbeat_age_ms=%.3f owner_alive=%s" %
+              (now, playerMode.name, mode_state, health["queue_depth"],
+               health["heartbeat_age_ms"], health["owner_alive"]), flush=True)
+        last_owner_health_log = now
     if soundPlayer is not None and hasattr(soundPlayer, "update"):
         soundPlayer.update()
 
@@ -408,55 +468,6 @@ def volumeDown(channel):
         samples[2].play()
     setVolume(currentVolume)
 
-def get_distance():
-    global ultrasonic_timeout_count, ultrasonic_last_timeout_log
-    measurement_started = time.monotonic()
-    # Ensure trigger is low
-    GPIO.output(Input.INPUT_SONIC_TRIGGER, False)
-    time.sleep(0.002)
-
-    # Send 10µs trigger pulse
-    GPIO.output(Input.INPUT_SONIC_TRIGGER, True)
-    time.sleep(0.00001)
-    GPIO.output(Input.INPUT_SONIC_TRIGGER, False)
-
-    timeout = time.monotonic() + 0.05
-    # Wait for echo start
-    start_time = time.monotonic()
-    while GPIO.input(Input.INPUT_SONIC_ECHO) == 0:  
-        start_time = time.monotonic()
-        if time.monotonic() > timeout:
-            ultrasonic_timeout_count += 1
-            now = time.monotonic()
-            if now - ultrasonic_last_timeout_log >= 5.0:
-                print("SYNTH ultrasonic_timeout phase=start count=%d duration_ms=%.3f" %
-                      (ultrasonic_timeout_count,
-                       (now - measurement_started) * 1000.0), flush=True)
-                ultrasonic_last_timeout_log = now
-            return -1.0
-
-    timeout = time.monotonic() + 0.02
-    # Wait for echo end
-    end_time = time.monotonic()
-    while GPIO.input(Input.INPUT_SONIC_ECHO) == 1:
-        end_time = time.monotonic()
-        if time.monotonic() > timeout:
-            ultrasonic_timeout_count += 1
-            now = time.monotonic()
-            if now - ultrasonic_last_timeout_log >= 5.0:
-                print("SYNTH ultrasonic_timeout phase=end count=%d duration_ms=%.3f" %
-                      (ultrasonic_timeout_count,
-                       (now - measurement_started) * 1000.0), flush=True)
-                ultrasonic_last_timeout_log = now
-            return -1.0
-
-    # Calculate distance
-    elapsed = end_time - start_time
-    distance = (elapsed * 34300) / 2  # cm
-
-    # print(f"D: {distance:.2f} cm")
-    return distance
-
 # TODO: set this by defined GOIO inputs (bananas)
 def setPlayerMode(mode):
     global playerMode
@@ -468,7 +479,10 @@ def setPlayerMode(mode):
     mode = PlayerMode(mode)
 
     if (playerMode == mode and mode_state == "ACTIVE"):
-        print("setPlayerMode: already in mode " + str(mode))
+        print("MODE transition_rejected requested=%s reason=already_active "
+              "current_mode=%s state=%s generation=%d uptime=%.6f" %
+              (mode.name, playerMode.name, mode_state, mode_generation,
+               time.monotonic()), flush=True)
         return
     
 
@@ -478,6 +492,10 @@ def setPlayerMode(mode):
     soundPlayer = None
     mode_generation += 1
     generation = mode_generation
+    print("MODE transition_accepted requested=%s previous_mode=%s "
+          "previous_state=%s generation=%d uptime=%.6f" %
+          (mode.name, old_mode.name, mode_state, generation, requested_at),
+          flush=True)
     cleanup_done = None
     if old_player is not None:
         mode_state = "STOPPING"
@@ -575,12 +593,12 @@ GPIO.add_event_detect(Input.INPUT_PRV, GPIO.RISING, callback=inputPrevious, boun
 GPIO.add_event_detect(Input.INPUT_VOL_UP, GPIO.RISING, callback=lambda x: enqueue_command("volume_up"), bouncetime=500)
 GPIO.add_event_detect(Input.INPUT_VOL_DOWN, GPIO.RISING, callback=lambda x: enqueue_command("volume_down"), bouncetime=500)
 
-GPIO.add_event_detect(Input.INPUT_MUSIC_MODE, GPIO.RISING, callback=lambda x : enqueue_command("mode", PlayerMode.MUSIC), bouncetime=1000)
-GPIO.add_event_detect(Input.INPUT_ONLINE_MODE, GPIO.RISING, callback=lambda x : enqueue_command("mode", PlayerMode.ONLINE), bouncetime=1000)
+GPIO.add_event_detect(Input.INPUT_MUSIC_MODE, GPIO.RISING, callback=lambda channel: _mode_gpio_callback(channel, PlayerMode.MUSIC), bouncetime=1000)
+GPIO.add_event_detect(Input.INPUT_ONLINE_MODE, GPIO.RISING, callback=lambda channel: _mode_gpio_callback(channel, PlayerMode.ONLINE), bouncetime=1000)
 # GPIO.add_event_detect(Input.INPUT_ANIMAL_MODE, GPIO.RISING, callback=lambda x :setPlayerMode(PlayerMode.ANIMALS), bouncetime=1000)
-GPIO.add_event_detect(Input.INPUT_INSTRUMENT_MODE, GPIO.RISING, callback=lambda x :enqueue_command("mode", PlayerMode.INSTRUMENT), bouncetime=1000)
+GPIO.add_event_detect(Input.INPUT_INSTRUMENT_MODE, GPIO.RISING, callback=lambda channel: _mode_gpio_callback(channel, PlayerMode.INSTRUMENT), bouncetime=1000)
 
-GPIO.add_event_detect(Input.INPUT_SYNTH_MODE, GPIO.RISING, callback=lambda x : enqueue_command("mode", PlayerMode.SYNTH), bouncetime=1000)
+GPIO.add_event_detect(Input.INPUT_SYNTH_MODE, GPIO.RISING, callback=lambda channel: _mode_gpio_callback(channel, PlayerMode.SYNTH), bouncetime=1000)
 SoundPlayerBase.input_dispatcher = enqueue_command
 for generic_input in SoundPlayerBase.inputs:
     GPIO.add_event_detect(
@@ -594,11 +612,6 @@ watchdog.ready()
 
 # loop until termination
 while True:
-    # distance_counter += 1
-    # if distance_counter % 10 == 0:
-    #     distance = get_distance()
-        # print(f"Distance: {distance:.2f} cm")
-
     # if soundPlayer is not None:
     #     soundPlayer.update()
     # Player state is owned by _command_worker; this loop only keeps the

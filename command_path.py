@@ -15,6 +15,8 @@ class SerializedCommandPath:
         self._sequence = 0
         self._sequence_lock = threading.Lock()
         self._logger = logger or self._default_logger
+        self._last_tick_completed_at = 0.0
+        self._last_dequeue_at = 0.0
 
     @staticmethod
     def _default_logger(message):
@@ -41,6 +43,19 @@ class SerializedCommandPath:
                 % (sequence, command, enqueued_at))
             return False
 
+    def health(self):
+        """Return a lock-free diagnostic snapshot for lightweight producers."""
+        now = time.monotonic()
+        last_tick = self._last_tick_completed_at
+        return {
+            "owner_alive": self._thread is not None and self._thread.is_alive(),
+            "queue_depth": self._queue.qsize(),
+            "heartbeat_age_ms": ((now - last_tick) * 1000.0
+                                 if last_tick else -1.0),
+            "last_dequeue_age_ms": ((now - self._last_dequeue_at) * 1000.0
+                                    if self._last_dequeue_at else -1.0),
+        }
+
     def _run(self):
         while True:
             try:
@@ -56,6 +71,7 @@ class SerializedCommandPath:
             try:
                 if command is not None:
                     dequeued_at = time.monotonic()
+                    self._last_dequeue_at = dequeued_at
                     handler_started = dequeued_at
                     self._logger(
                         "COMMAND dequeue seq=%d command=%s enqueue=%.6f "
@@ -85,6 +101,7 @@ class SerializedCommandPath:
                     self._tick()
                 except Exception as exc:
                     self._logger("COMMAND tick_exception error=%r" % (exc,))
+                self._last_tick_completed_at = time.monotonic()
                 tick_ms = (time.monotonic() - tick_started) * 1000.0
                 if tick_ms >= 25.0:
                     self._logger("COMMAND slow_tick duration_ms=%.3f" % tick_ms)
