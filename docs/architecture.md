@@ -2,7 +2,10 @@
 
 ## Scope and evidence
 
-This document describes commit `e099e45` (`v1.0`, 2026-03-24). **Verified** statements are derived from tracked source, scripts, or documentation. **Inference** statements explain likely runtime effects and must be confirmed on the Raspberry Pi.
+This document describes the current source as reviewed on 2026-08-31.
+**Verified** statements are derived from tracked source, scripts, documentation,
+or the explicitly identified physical-Pi validation. **Inference** statements
+explain likely runtime effects and must be confirmed on the Raspberry Pi.
 
 ## Shape of the application
 
@@ -14,19 +17,26 @@ This document describes commit `e099e45` (`v1.0`, 2026-03-24). **Verified** stat
 system service -> RasPlayer.py
                     |-- RPi.GPIO edge callbacks -> bounded command queue
                     |-- libVLC instance + per-mode players -> files/HTTP radio
-                    |-- pygame mixer -> system, animal, and instrument samples
+                    |-- pygame mixer -> animal and instrument samples
                     |-- FluidSynth -> distance-controlled synth
-                    `-- 50 ms main loop -> active SynthPlayer.update()
+                    |-- mpg123 worker -> startup and UI feedback
+                    `-- 50 ms owner tick -> active player update()
 ```
 
 ## Startup flow
 
 **Verified:** The current startup path is deliberately split at `LOCAL_READY`:
 
-1. Record a monotonic `python_entry` marker and import only GPIO, pygame/sample support, and standard-library control code. VLC, mode classes, FluidSynth, and asyncio are not imported here.
+1. Record a monotonic `python_entry` marker and import only GPIO and
+   standard-library control code. pygame/sample support, VLC, mode classes,
+   FluidSynth, and asyncio are not imported here.
 2. Register signal handlers, select BCM numbering, configure fixed GPIO pins, and emit `gpio_ready`.
 3. Set mixer volume with `amixer -c 0 sset PCM <volume>%` (initially 80%). Launch `mpg123` for `TurnOn.mp3` and verify it remains running; pygame is not imported on this path.
-4. Register rising-edge events for global controls and mode selectors. `LOCAL_READY` means physical controls are registered and the mpg123 startup sound has been successfully triggered. Pygame is loaded on first volume/sample-mode use. No content mode is selected (`PlayerMode.NONE`).
+4. Register rising-edge events for global controls and mode selectors and both
+   edges for generic buttons. `LOCAL_READY` means physical controls are
+   registered and the mpg123 startup sound has been successfully triggered.
+   Pygame is loaded on first sample-mode use. No content mode is selected
+   (`PlayerMode.NONE`).
 5. On a mode selection, the owner records a generation and starts lazy backend preparation off-thread. The shared VLC instance is created once, each mode receives a dedicated media player, and only the current generation may become active. FluidSynth remains Synth-only.
 
 The markers are concise `STARTUP <name> elapsed=<seconds>` lines using
@@ -47,15 +57,17 @@ costs are recorded in `docs/pi-boot-optimization.md`.
 
 **Verified:** Relative media paths are resolved from the working directory. The documented service uses `/home/dnl/RasPlayer`, so a deployment must retain that directory structure and the `Sounds` tree.
 
-**Verified from current source:** Accepted mode transitions, Music playlist
-selection and Play/Pause, Online station selection and Play/Pause, and volume
-changes enqueue short UI sounds on one bounded feedback worker. A mode
-acknowledgement is queued before cleanup or destination initialization; mode
-activation and stale completions do not enqueue it again. The command owner
-never waits for MP3 decoding or playback. Generic actions use
-`Sounds/System/0/generic.mp3`; volume retains `vol-up.mp3`/`vol-down.mp3` and
-the existing double-up pattern at maximum volume. Feedback uses mpg123 rather
-than pygame, so Synth feedback does not close or reinitialize FluidSynth.
+**Verified from current source:** Accepted mode transitions, successful Music
+playlist/Online station selection, successful Music/Online Play/Pause,
+physical Prev/Next, and applied volume changes enqueue short UI sounds on one
+bounded feedback worker. A mode acknowledgement is queued before cleanup or
+destination initialization; mode activation and stale completions do not
+enqueue it again. The command owner never waits for MP3 decoding or playback.
+Physical navigation and general acknowledgements use `generic.mp3`; mode and
+volume semantics use `mode-switch.mp3`, `vol-up.mp3`, `vol-down.mp3`, and
+`vol-max.mp3`. Feedback uses mpg123 rather than pygame, so Synth feedback does
+not close or reinitialize FluidSynth. Natural Music track completion and its
+automatic next-track command never enqueue UI feedback.
 
 ## Modes and state
 
@@ -74,7 +86,11 @@ than pygame, so Synth feedback does not close or reinitialize FluidSynth.
 
 ## Input and hardware interface
 
-**Verified:** GPIO uses `RPi.GPIO` and BCM numbering. All buttons use rising-edge detection and `GPIO.PUD_DOWN`; no hardware debounce circuit is documented. `GPIO-Mapping.md` is the authoritative in-repository mapping:
+**Verified:** GPIO uses `RPi.GPIO` and BCM numbering. Global action buttons and
+mode selectors use rising-edge detection. Generic buttons use both edges so
+their callback can capture the physical level explicitly; routing then applies
+category-specific semantics. No hardware debounce circuit is documented.
+`GPIO-Mapping.md` is the authoritative in-repository mapping:
 
 | Function | BCM | Header pin |
 | --- | ---: | ---: |
@@ -87,7 +103,14 @@ than pygame, so Synth feedback does not close or reinitialize FluidSynth.
 | Five generic buttons | 11, 5, 6, 19, 16 | 23, 29, 31, 35, 36 |
 | Status LED output | 26 | 37 |
 
-**Verified:** Global controls have 500 ms software bounce times; mode selectors use 1,000 ms and generic buttons use 190 ms. Generic GPIO callbacks are registered once by `RasPlayer.py` and only enqueue a button index. The owner dispatches to the currently active mode. Synth handles the resulting command directly: it selects the instrument, logs the current distance gate, and issues `noteon()` with a short event latch so a valid rising-edge command cannot disappear before the next level poll. Commands received while a mode is still initializing are explicitly logged as skipped.
+**Verified:** Global controls have 500 ms software bounce times; mode selectors
+use 1,000 ms and generic buttons use 190 ms. Generic callbacks are registered
+once by `RasPlayer.py` and enqueue the button, channel, sampled GPIO level,
+press/release edge, and input timestamp. Music playlist, Online station, and
+Instrument sample actions are press-only; their releases are ignored. Synth
+press and release remain strict FIFO: press selects the instrument and issues
+`noteon()`, the held level keeps it active, and release issues `noteoff()`.
+Commands received while a mode is still initializing are logged as skipped.
 
 **Verified from source:** Synth owns a dedicated ultrasonic worker. It accesses
 `/dev/gpiomem` through the same GPIO register path as the privileged hardware
@@ -103,15 +126,26 @@ steps; invalid samples retain rather than replace the last valid step.
 
 ## Audio and media
 
-**Verified:** There are three independent audio clients:
+**Verified:** There are four independent audio clients:
 
 - `python-vlc` uses one instance with dedicated per-mode players. Online applies 1 s network caching/reconnect options and logs open return, state changes, failures and an 8 s timeout.
-- `pygame.mixer` plays startup, volume, animal, and instrument MP3 samples. It is initialized once on first use at 44.1 kHz, signed 16-bit stereo, and a 4096-frame buffer.
+- `pygame.mixer` plays animal and instrument MP3 samples. It is initialized
+  once on first sample-mode use at 44.1 kHz, signed 16-bit stereo, and a
+  4096-frame buffer.
 - `pyfluidsynth` starts its own ALSA driver with period size 1024, four periods, and polyphony 64. It loads `/usr/share/sounds/sf2/FluidR3_GM.sf2` and changes GM programs using the generic buttons.
+- `mpg123` plays the startup cue and serialized UI feedback through ALSA.
 
-**Verified:** The repository currently contains roughly 305 MB of MP3 content and about 1.35 MB of WAV content. Sample paths are selected by glob and lexical sort; ordering therefore depends on filenames. `Sounds/` is ignored for new Git additions, though the existing asset files are currently tracked. `syncSoundsToPi.sh` separately rsyncs `Sounds` to the target.
+**Verified:** Sample paths are selected by glob and lexical sort, so ordering
+depends on filenames. Production media is separately managed and most of
+`Sounds/` is intentionally ignored by Git; a checkout is not evidence of the
+current device media set. `syncSoundsToPi.sh` is the historical bulk-media
+sync helper, while the signed deployment helper separately validates and
+uploads the six current system cues.
 
-**Verified:** VLC end callbacks enqueue `next`; they do not directly call the active player.
+**Verified:** A Music VLC end callback enqueues the strict-FIFO
+`automatic_next` command. The owner advances once without UI feedback. This is
+separate from the coalesced, feedback-bearing `navigation_delta` used by a
+physical Prev/Next press.
 
 ## Concurrency and process interaction
 
@@ -119,6 +153,14 @@ steps; invalid samples retain rather than replace the last valid step.
 
 ## Test coverage and history
 
-**Verified:** The only tracked test utility is `tests/underrun_test.py`. It plays a supplied WAV with pygame and can spawn `journalctl -f` to print lines containing `underrun`; it is a manual device diagnostic, not an automated regression test.
+**Verified:** The host `unittest` suite covers serialized command ownership,
+coalescing, feedback selection, explicit generic edge routing, Synth note
+press/release behavior, systemd notification helpers, and the silent automatic
+Music progression event. `tests/underrun_test.py` remains a separate manual
+device diagnostic.
 
-**Verified:** History shows the project moved from `mpyg321` to VLC in January 2026, added pygame underrun buffering in December 2025, and replaced a PyAudio/numpy oscillator with FluidSynth in March 2026. The current ultrasonic polling timeouts were added in the latest commit. No history contains a reproducible operating-system configuration or dependency lockfile.
+**Verified:** History shows the project moved from `mpyg321` to VLC in January
+2026, added pygame underrun buffering in December 2025, and replaced a
+PyAudio/numpy oscillator with FluidSynth in March 2026. The Buildroot external
+tree now records the production OS/package configuration; Python dependencies
+remain integrated as Buildroot packages rather than a Python lockfile.

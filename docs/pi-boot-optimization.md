@@ -208,7 +208,15 @@ Firmware/configuration inspection found standard `dtparam=audio=on`, `dtoverlay=
 
 ## mpg123 startup-sound optimization (2026-08-28)
 
-**Verified:** `RasPlayer.py` no longer imports `SamplePlayer`/pygame before readiness. It launches `mpg123 -q -o alsa ./Sounds/System/0/TurnOn.mp3`, confirms the process has not failed after 100 ms, and only then emits `audio_ready`, `system_sounds_ready`, and `LOCAL_READY`. The existing pygame `SamplePlayer` remains available through `ensure_sample_player()` for volume sounds and sample modes; any still-running mpg123 child is stopped before pygame initializes and is reaped by the owner tick.
+**Verified:** `RasPlayer.py` no longer imports `SamplePlayer`/pygame before
+readiness. It launches `mpg123 -q -o alsa
+./Sounds/System/0/TurnOn.mp3`, confirms the process has not failed after 100
+ms, and only then emits `audio_ready`, `system_sounds_ready`, and
+`LOCAL_READY`. The existing pygame `SamplePlayer` remains available through
+`ensure_sample_player()` for the startup fallback and sample modes; normal
+volume feedback now uses the separate mpg123 feedback worker. Any still-running
+startup mpg123 child is stopped before pygame initializes and is reaped by the
+owner tick.
 
 If mpg123 cannot launch or exits unsuccessfully, startup falls back to pygame, plays the same `TurnOn.mp3`, and only then emits `LOCAL_READY`; therefore readiness still implies a usable startup-sound path, at the cost of the old cold-start time on that exceptional path.
 
@@ -235,3 +243,35 @@ and `LOCAL_READY`. It saves the combined event/kernel report to the FAT boot
 partition after readiness for retrieval without Wi-Fi. The exact procedure and
 current non-conclusive delay candidates are documented in
 `docs/buildroot-boot-instrumentation.md`.
+
+## Buildroot early-player ordering experiment (2026-08-31)
+
+**Pi-verified and rejected:** A test image started the canonical
+`S50rasplayer` service through an additional `S03rasplayer-early` hook after
+the essential S01/S02 scripts, while leaving provisioning, Wi-Fi, Dropbear,
+audio, GPIO, recovery, and signed deployment unchanged. The hook was present
+and executed on the physical Pi. The measured comparison was:
+
+| Boundary | Existing image | Early-player image | Change |
+| --- | ---: | ---: | ---: |
+| `rcS` begin | 3.730 s | 3.650 s | -80 ms |
+| manager started | 4.370 s | 3.960 s | -410 ms |
+| Python child started | 4.470 s | 3.990 s | -480 ms |
+| Python entry | 5.800 s | 5.538 s | -262 ms |
+| mpg123 process started | 6.090 s | 6.080 s | -10 ms |
+| `LOCAL_READY` | 6.213 s | 6.201 s | -12 ms |
+
+The physical power-on-to-audible observation remained approximately 10
+seconds. Starting Python earlier increased overlap with provisioning, USB and
+Wi-Fi initialization. In the captured application path, the initial `amixer`
+operation increased from approximately 116 ms to 358 ms, and Python-entry to
+`LOCAL_READY` increased from 413 ms to 663 ms. The earlier process launch
+therefore moved no meaningful user-visible boundary.
+
+The experiment was stopped under the negligible-gain criterion and the early
+hook was removed from the source tree. The known-good rollback image is
+`/home/dnl/rasplayer-build/rollback/boot-baseline-20260831/sdcard.img`, SHA-256
+`91e23199d4657ba2e6f5821fd6e4b3d34fe25d9c2db928dab3391f30e13f168c`.
+Further changes should target the externally inferred 3--4 second firmware
+interval or the 3.5-second kernel path only after better external
+instrumentation; blindly advancing more userspace work is not justified.

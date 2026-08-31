@@ -51,6 +51,7 @@ class SynthButtonTest(unittest.TestCase):
         player._button_latched_until = 0.0
         player._last_control_log = 0.0
         player._last_control_midi = None
+        player._pressed_buttons = set()
         return player
 
     def test_generic_event_calls_noteon_even_without_current_sensor_sample(self):

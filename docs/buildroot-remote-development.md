@@ -2,16 +2,19 @@
 
 The development image keeps network startup asynchronous. BusyBox init starts
 RasPlayer without waiting for Wi-Fi association, DHCP, DNS, or SSH. Wi-Fi
-credentials and the SSH public key are supplied locally on the readable FAT
-boot partition; neither is stored in Git or in the generated image before
-provisioning.
+credentials, the SSH public key, and the release-signing public key are
+supplied locally on the readable FAT boot partition; none is stored in Git or
+in the generated image before provisioning. The signing private key never
+leaves the development machine.
 
 ## One-time provisioning before first boot
 
 1. Generate or select an SSH key on the development computer. For a dedicated
    key, use `ssh-keygen -t ed25519 -f ~/.ssh/rasplayer_buildroot_ed25519` and
    keep the private key on the development computer.
-2. Prepare two local text files in a temporary directory (not the repository):
+2. Prepare the Wi-Fi and SSH files in a temporary directory (not the
+   repository), and create/verify the separate release-signing pair as
+   described in `docs/buildroot-ssh-development.md`:
 
    `wifi.network`:
 
@@ -27,18 +30,20 @@ provisioning.
 
 3. Flash `sdcard.img` to the approved test card. Do not boot it yet.
 4. Mount the card's first (FAT) partition on the development computer and copy
-   `wifi.network` and `dnl_authorized_keys` into its top-level directory. Do
-   not copy the private key. Safely eject the card.
+   `wifi.network`, `dnl_authorized_keys`, and
+   `rasplayer-update-public.pem` into its top-level directory. Do not copy
+   either private key. Safely eject the card.
 5. On the first boot, `S40provision` imports the files, creates user `dnl`
    (UID/GID 1000, `/home/dnl`, `/bin/sh`), installs the key as
    `/home/dnl/.ssh/authorized_keys`, and rebuilds `/etc/wpa_supplicant.conf`
    from the base configuration plus the network block. The account has a
    locked password; SSH access is key-only.
 
-The provisioning files remain on the FAT partition as local secrets. To
-deprovision, remove `wifi.network` and `dnl_authorized_keys` from the FAT
-partition and reboot. The next boot restores the credential-free base Wi-Fi
-configuration and leaves SSH without an authorized key.
+The provisioning files remain on the FAT partition as local inputs. To
+deprovision network/SSH access, remove `wifi.network` and
+`dnl_authorized_keys` and reboot. Removing
+`rasplayer-update-public.pem` also removes the signed-deployment trust anchor
+on the next provisioning pass; retain it for normal recovery and updates.
 
 ## Connection and discovery
 

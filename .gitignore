@@ -63,6 +63,7 @@ Thumbs.db
 buildroot/dnl_authorized_keys
 buildroot/wifi.network
 buildroot/rasplayer-update-public.pem
-/.local/rasplayer-signing/
+/rasplayer-update-public.pem
+/.local/
 wifi.network
 dnl_authorized_keys

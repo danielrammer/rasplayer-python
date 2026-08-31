@@ -62,7 +62,7 @@ class MusicPlayer(SoundPlayerBase):
     def _on_song_end(self, event):
         print("Song ended")
         if SoundPlayerBase.input_dispatcher is not None:
-            SoundPlayerBase.input_dispatcher("next", None)
+            SoundPlayerBase.input_dispatcher("automatic_next", None)
          #self._actions.put(self.playNext)
 
     # play next song in current list

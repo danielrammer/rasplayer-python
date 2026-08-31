@@ -2,7 +2,13 @@
 
 ## Implemented command ownership
 
-**Verified from current source:** GPIO callbacks and VLC end callbacks are lightweight producers. They timestamp and submit commands to a bounded queue (`64` entries). One daemon `SerializedCommandPath` thread is the sole owner of active `soundPlayer`, `playerMode`, mode-generation acceptance, playback commands, and periodic `update()`. Each dequeue logs enqueue/dequeue time, queue wait, depth, handler duration, result, exceptions, and slow ticks.
+**Verified from current source:** GPIO callbacks and VLC end callbacks are
+lightweight producers. They timestamp and submit commands to a bounded queue
+(`64` entries). A natural Music end event submits `automatic_next`, distinct
+from physical navigation. One daemon `SerializedCommandPath` thread is the
+sole owner of active `soundPlayer`, `playerMode`, mode-generation acceptance,
+playback commands, and periodic `update()`. Each dequeue logs enqueue/dequeue
+time, queue wait, depth, handler duration, result, exceptions, and slow ticks.
 
 The mode lifecycle remains `NONE`, `INITIALIZING`, `ACTIVE`, `STOPPING`, or `FAILED`, but potentially blocking backend stop and construction now run on daemon workers. The owner increments a generation, detaches the prior active object, and later accepts a `_mode_ready` result only if its generation is still current. Stale completions are torn down off-thread. Commands continue to dequeue while a mode is preparing; transport/generic commands have no target until that generation becomes active.
 
@@ -13,6 +19,11 @@ or unsupported actions do not enqueue feedback. Mode acknowledgement is
 submitted immediately after transition acceptance, before cleanup/init, and
 is not repeated at `MODE active`. This keeps MP3 playback and
 its bounded three-second failure path outside the serialized owner.
+
+The allowlist maps mode changes to `mode-switch.mp3`, volume direction and
+maximum to `vol-up.mp3`, `vol-down.mp3`, and `vol-max.mp3`, and accepted
+physical navigation/selection/transport actions to `generic.mp3`. Natural
+playback progression is not a user acknowledgement and is always silent.
 
 ## Resource lifecycle
 
@@ -61,7 +72,8 @@ commands retain chronological order.
   Constructors already inside an uninterruptible library call finish and are
   cleaned as stale off-thread.
 - Generic Synth/sample commands, play/pause, `_mode_ready`, lifecycle work,
-  and all other command types remain FIFO and are never coalesced.
+  natural `automatic_next`, and all other command types remain FIFO and are
+  never coalesced. Synth down/up therefore cannot be dropped or reordered.
 - The separate feedback worker keeps at most one pending acknowledgement for
   each coalescible category. Feedback for unrelated actions remains ordered.
 
@@ -86,10 +98,21 @@ cancelled before backend construction, and three workers already inside
 backend initialization completed and were cleaned as stale. Feedback
 superseded 29 pending acknowledgements. The worst observed feedback wait fell
 from the pre-change physical-log baseline of 7,511.814 ms to 812.920 ms; the
-remaining case was the intentional two-tone maximum-volume acknowledgement,
-not a multi-action backlog. Online radio DNS/connection errors occurred during
-the test, but command ownership remained responsive and the final requested
-selection was retained.
+remaining case was the then-current maximum-volume acknowledgement, not a
+multi-action backlog. A later feedback-sound update replaced that historical
+cue with the dedicated `vol-max.mp3`. Online radio DNS/connection errors
+occurred during the test, but command ownership remained responsive and the
+final requested selection was retained.
+
+## Silent automatic Music progression (2026-08-31)
+
+**Pi-verified on signed release `track-end-feedback-20260831-1`:** The VLC
+natural-end callback now submits `automatic_next` instead of reusing the
+physical `next` input. Two observed automatic advances completed with 4.559 ms
+and 7.297 ms input-to-action latency and emitted no feedback request. Physical
+Next, playlist selection, and Play/Pause retained their intended audible
+acknowledgements. The regression test asserts the callback's distinct command
+identity so natural playback cannot silently re-enter the user-feedback path.
 
 ## Deployment validation (2026-08-28)
 

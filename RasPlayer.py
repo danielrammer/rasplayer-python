@@ -223,6 +223,8 @@ def dispatch_player_input(command, value=None):
         return enqueue_command("navigation_delta", 1)
     if command == "previous":
         return enqueue_command("navigation_delta", -1)
+    if command == "automatic_next":
+        return enqueue_command("automatic_next", 1)
     return enqueue_command(command, value)
 
 def _mode_input_snapshot():
@@ -427,6 +429,10 @@ def _process_command(command, value):
         if applied:
             feedback.play("generic", source="navigation",
                           category="navigation")
+    elif command == "automatic_next" and soundPlayer is not None:
+        # Natural playback progression is not a physical user action and must
+        # never enqueue UI feedback or share the coalesced input category.
+        soundPlayer.navigate(value)
     elif command == "play_pause" and soundPlayer is not None:
         if soundPlayer.playPausePlayer():
             if playerMode in (PlayerMode.MUSIC, PlayerMode.ONLINE):
