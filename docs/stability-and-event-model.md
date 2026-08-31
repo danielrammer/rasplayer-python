@@ -40,6 +40,57 @@ paths are now explicit in diagnostics.
 
 `tests/test_command_path.py` covers FIFO ordering, handler-failure recovery, bounded queues, the prior synchronous-delay model, delegated slow work, and a burst of 20 alternating mode/input commands. The host stress run on 2026-08-29 measured 200.131 ms queue wait behind a simulated 200 ms synchronous initializer versus 0.151 ms for one delegated transition and 2.560 ms maximum across the 40-command burst. These are architecture tests, not Pi latency measurements.
 
+## Rapid-input coalescing (2026-08-31)
+
+**Verified from source:** Coalescing is opt-in by command category. Commands
+without a policy remain FIFO and bounded by the existing 64-entry limit.
+Coalesced entries move to the newest input's position, so unrelated pending
+commands retain chronological order.
+
+- `volume_delta` sums pending 10-percent changes. Opposing changes cancel a
+  pending entry at zero, and the owner makes one clamped `amixer` call for the
+  resulting target.
+- `navigation_delta` sums next/previous offsets. Music, Online, and sample
+  players calculate the final wrapped index and open/load it once.
+- Music playlist and Online station selectors use latest-value replacement,
+  tagged with mode and generation. A selection from an obsolete mode
+  generation is skipped.
+- Mode requests use latest-value replacement. The existing generation check
+  remains authoritative; a producer-side cancellation event also prevents
+  superseded workers from beginning later backend stages where possible.
+  Constructors already inside an uninterruptible library call finish and are
+  cleaned as stale off-thread.
+- Generic Synth/sample commands, play/pause, `_mode_ready`, lifecycle work,
+  and all other command types remain FIFO and are never coalesced.
+- The separate feedback worker keeps at most one pending acknowledgement for
+  each coalescible category. Feedback for unrelated actions remains ordered.
+
+Every enqueue now logs queue depth. Dequeue logs oldest and latest enqueue
+times, queue wait, depth, and represented input count. Completion logs handler
+duration and latest-input-to-action latency. Health snapshots include totals
+for coalesced, cancelled, superseded, and queue-full dropped commands.
+
+**Pi-verified on signed release `rapid-input-20260831-1`:** The physical test
+covered rapid alternating Volume Up/Down, repeated Volume Up, Music playlist
+and track navigation, Online station navigation, rapid Music/Online/
+Instrument/Synth changes, Synth generic input, and normal presses afterward.
+Across 133 completed commands, maximum queue depth was 4, maximum queue wait
+was 110.156 ms, maximum input-to-action completion was 226.378 ms, and there
+were no command drops or handler exceptions. Category maxima were 221.785 ms
+for volume (during concurrent backend initialization), 226.378 ms for
+selection, 4.603 ms for navigation, 15.271 ms for accepted mode work, and
+19.744 ms for uncoalesced generic input.
+
+One pending mode request was coalesced, two obsolete mode workers were
+cancelled before backend construction, and three workers already inside
+backend initialization completed and were cleaned as stale. Feedback
+superseded 29 pending acknowledgements. The worst observed feedback wait fell
+from the pre-change physical-log baseline of 7,511.814 ms to 812.920 ms; the
+remaining case was the intentional two-tone maximum-volume acknowledgement,
+not a multi-action backlog. Online radio DNS/connection errors occurred during
+the test, but command ownership remained responsive and the final requested
+selection was retained.
+
 ## Deployment validation (2026-08-28)
 
 **Verified on Pi:** The six runtime modules plus `command_path.py` were copied to `/home/dnl/RasPlayer`. The service restarted successfully, stayed active, and retained `NRestarts=0`. NetworkManager and SSH remained active. The journal showed all startup markers and no startup exception; no `vlc_init` or mode initialization occurred before `LOCAL_READY`.
