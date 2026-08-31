@@ -51,6 +51,16 @@ class FeedbackPlayerTest(unittest.TestCase):
         finally:
             feedback.close()
 
+    def test_dedicated_feedback_names_use_their_semantic_assets(self):
+        expected = {
+            "generic": "./Sounds/System/0/generic.mp3",
+            "mode_switch": "./Sounds/System/0/mode-switch.mp3",
+            "volume_down": "./Sounds/System/0/vol-down.mp3",
+            "volume_max": "./Sounds/System/0/vol-max.mp3",
+            "volume_up": "./Sounds/System/0/vol-up.mp3",
+        }
+        self.assertEqual(FeedbackPlayer.SOUNDS, expected)
+
 
 if __name__ == "__main__":
     unittest.main()

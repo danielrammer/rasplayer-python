@@ -539,8 +539,7 @@ def volumeUp(channel):
     maxVolumeReached = currentVolume >= 100
 
     if maxVolumeReached:
-        feedback.play("volume_up", count=2, interval=0.1,
-                      source="volume_up_max")
+        feedback.play("volume_max", source="volume_up_max")
     else:
         currentVolume = min(currentVolume + 10, 100)
         feedback.play("volume_up", source="volume_up")
@@ -563,8 +562,8 @@ def applyVolumeDelta(delta):
           (delta, previous, currentVolume), flush=True)
     if currentVolume == previous:
         if delta > 0 and currentVolume == 100:
-            feedback.play("volume_up", count=2, interval=0.1,
-                          source="volume_up_max", category="volume")
+            feedback.play("volume_max", source="volume_up_max",
+                          category="volume")
         return
     feedback.play("volume_up" if currentVolume > previous else "volume_down",
                   source="volume_coalesced", category="volume")
@@ -599,7 +598,7 @@ def setPlayerMode(mode, cancel=None):
           "previous_state=%s generation=%d uptime=%.6f" %
           (mode.name, old_mode.name, mode_state, generation, requested_at),
           flush=True)
-    feedback.play("generic", source="mode_%s_generation_%d" %
+    feedback.play("mode_switch", source="mode_%s_generation_%d" %
                   (mode.name, generation), category="mode")
     cleanup_done = None
     if old_player is not None:

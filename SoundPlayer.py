@@ -48,6 +48,14 @@ def apply_generic_input(player, mode_name, event):
 class FeedbackPlayer:
     """Serialize short mpg123 UI sounds without occupying the owner thread."""
 
+    SOUNDS = {
+        "generic": "./Sounds/System/0/generic.mp3",
+        "mode_switch": "./Sounds/System/0/mode-switch.mp3",
+        "volume_down": "./Sounds/System/0/vol-down.mp3",
+        "volume_max": "./Sounds/System/0/vol-max.mp3",
+        "volume_up": "./Sounds/System/0/vol-up.mp3",
+    }
+
     def __init__(self, process_factory=None):
         self._requests = deque()
         self._request_condition = threading.Condition()
@@ -63,11 +71,7 @@ class FeedbackPlayer:
 
     def play(self, name, count=1, interval=0.0, source="action",
              category=None):
-        path = {
-            "generic": "./Sounds/System/0/generic.mp3",
-            "volume_up": "./Sounds/System/0/vol-up.mp3",
-            "volume_down": "./Sounds/System/0/vol-down.mp3",
-        }.get(name)
+        path = self.SOUNDS.get(name)
         if path is None:
             print("FEEDBACK rejected name=%s reason=unknown" % name, flush=True)
             return False
