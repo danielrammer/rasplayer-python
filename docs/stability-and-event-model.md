@@ -6,6 +6,14 @@
 
 The mode lifecycle remains `NONE`, `INITIALIZING`, `ACTIVE`, `STOPPING`, or `FAILED`, but potentially blocking backend stop and construction now run on daemon workers. The owner increments a generation, detaches the prior active object, and later accepts a `_mode_ready` result only if its generation is still current. Stale completions are torn down off-thread. Commands continue to dequeue while a mode is preparing; transport/generic commands have no target until that generation becomes active.
 
+Short UI feedback is also delegated: accepted actions enqueue an allowlisted
+sound request to one bounded worker, which serializes mpg123 processes and
+records queue time, duration, exit status, and stderr. Failed, stale, ignored,
+or unsupported actions do not enqueue feedback. Mode acknowledgement is
+submitted immediately after transition acceptance, before cleanup/init, and
+is not repeated at `MODE active`. This keeps MP3 playback and
+its bounded three-second failure path outside the serialized owner.
+
 ## Resource lifecycle
 
 **Verified from current source:** The libVLC instance remains process-owned, but each mode gets a dedicated media player. This prevents a slow network-player stop from blocking or corrupting the player used by local MP3. `MusicPlayer.stop()` detaches its end callback; Synth stop/delete is timed off-thread. Before Synth starts, pygame is invalidated and its mixer is closed so the exclusive Buildroot ALSA `hw:0,0` path is available. Transitions to/from Synth wait, off-thread and for at most five seconds, for prior cleanup.

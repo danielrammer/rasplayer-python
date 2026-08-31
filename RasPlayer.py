@@ -25,13 +25,16 @@ def startup_mark(label):
 startup_mark("python_entry")
 watchdog = WatchdogNotifier()
 
-from SoundPlayer import SoundPlayerBase
+from SoundPlayer import FeedbackPlayer, SoundPlayerBase
 import glob
 import subprocess
 import RPi.GPIO as GPIO
 from enum import IntEnum
 from time import sleep
 startup_mark("minimum_imports_complete")
+
+
+feedback = FeedbackPlayer()
 
 ## -------- HOW TO RUN THAT STUFF --------
 # RUN: xvfb-run python RasPlayer.py
@@ -57,6 +60,7 @@ def cleanup_and_exit(signum, frame):
         except Exception:
             pass
     stop_startup_process()
+    feedback.close()
     GPIO.cleanup()  # Cleanup GPIO
     sys.exit(0)  # Exit the script
 
@@ -353,10 +357,16 @@ def _process_command(command, value):
         setPlayerMode(value)
     elif command == "next" and soundPlayer is not None:
         soundPlayer.playNext()
+        if playerMode == PlayerMode.ONLINE:
+            feedback.play("generic")
     elif command == "previous" and soundPlayer is not None:
         soundPlayer.playPrevious()
+        if playerMode == PlayerMode.ONLINE:
+            feedback.play("generic")
     elif command == "play_pause" and soundPlayer is not None:
-        soundPlayer.playPausePlayer()
+        if soundPlayer.playPausePlayer():
+            if playerMode in (PlayerMode.MUSIC, PlayerMode.ONLINE):
+                feedback.play("generic")
     elif command == "volume_up":
         volumeUp(None)
     elif command == "volume_down":
@@ -367,7 +377,10 @@ def _process_command(command, value):
                   "mode=%s state=%s" %
                   (value, playerMode.name, mode_state), flush=True)
         else:
-            soundPlayer.buttonDown(value)
+            result = soundPlayer.buttonDown(value)
+            if (result is not False and
+                playerMode in (PlayerMode.MUSIC, PlayerMode.ONLINE)):
+                feedback.play("generic")
 
 def _command_tick():
     if shutting_down:
@@ -438,34 +451,22 @@ def setVolume(vol):
 def volumeUp(channel):
     # print("vol up")
     global currentVolume
-    samples = (None if playerMode == PlayerMode.SYNTH or
-               mode_state in ("STOPPING", "INITIALIZING")
-               else ensure_sample_player().samples)
     maxVolumeReached = currentVolume >= 100
 
     if maxVolumeReached:
-        if samples is not None:
-            print("VOL MAX: " + str(samples[0]))
-            samples[1].play()
-            sleep(0.1)
-            samples[1].play()
+        feedback.play("volume_up", count=2, interval=0.1,
+                      source="volume_up_max")
     else:
         currentVolume = min(currentVolume + 10, 100)
+        feedback.play("volume_up", source="volume_up")
         setVolume(currentVolume)
-        sleep(0.05)
-        if samples is not None:
-            samples[1].play()
 
 
 def volumeDown(channel):
     # print("vol down")
     global currentVolume
-    samples = (None if playerMode == PlayerMode.SYNTH or
-               mode_state in ("STOPPING", "INITIALIZING")
-               else ensure_sample_player().samples)
     currentVolume = max(50, currentVolume - 10)
-    if samples is not None:
-        samples[2].play()
+    feedback.play("volume_down", source="volume_down")
     setVolume(currentVolume)
 
 # TODO: set this by defined GOIO inputs (bananas)
@@ -496,6 +497,8 @@ def setPlayerMode(mode):
           "previous_state=%s generation=%d uptime=%.6f" %
           (mode.name, old_mode.name, mode_state, generation, requested_at),
           flush=True)
+    feedback.play("generic", source="mode_%s_generation_%d" %
+                  (mode.name, generation))
     cleanup_done = None
     if old_player is not None:
         mode_state = "STOPPING"

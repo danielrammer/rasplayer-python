@@ -43,8 +43,19 @@ costs are recorded in `docs/pi-boot-optimization.md`.
 | Mode classes | Background mode-preparation worker | No |
 | FluidSynth | `SynthPlayer.__init__` on preparation worker | No |
 | queue/threading | Music mode constructor/event callback | No |
+| mpg123 feedback worker | First queued UI feedback after a successful action | No |
 
 **Verified:** Relative media paths are resolved from the working directory. The documented service uses `/home/dnl/RasPlayer`, so a deployment must retain that directory structure and the `Sounds` tree.
+
+**Verified from current source:** Accepted mode transitions, Music playlist
+selection and Play/Pause, Online station selection and Play/Pause, and volume
+changes enqueue short UI sounds on one bounded feedback worker. A mode
+acknowledgement is queued before cleanup or destination initialization; mode
+activation and stale completions do not enqueue it again. The command owner
+never waits for MP3 decoding or playback. Generic actions use
+`Sounds/System/0/generic.mp3`; volume retains `vol-up.mp3`/`vol-down.mp3` and
+the existing double-up pattern at maximum volume. Feedback uses mpg123 rather
+than pygame, so Synth feedback does not close or reinitialize FluidSynth.
 
 ## Modes and state
 

@@ -129,10 +129,16 @@ class MusicPlayer(SoundPlayerBase):
         self.player.stop()
         self.setList("./Sounds/Music/0" + str(buttonNumber) + "/*.mp3")
 
+        if not self.filelist:
+            print("MusicPlayer playlist switch ignored: empty playlist %d" %
+                  buttonNumber, flush=True)
+            return False
+
         self.currentFileNum = 0
         print("Current file num set to 0 == " + str(self.currentFileNum))
 
         self.playSong(self.filelist[self.currentFileNum])
+        return True
 
     def update(self):
         super().update()

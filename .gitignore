@@ -1,6 +1,13 @@
 # RasPlayer specific
 
 Sounds/
+!Sounds/
+Sounds/*
+!Sounds/System/
+Sounds/System/*
+!Sounds/System/0/
+Sounds/System/0/*
+!Sounds/System/0/generic.mp3
 
 
 # These are some examples of commonly ignored file patterns.

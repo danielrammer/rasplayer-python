@@ -1,6 +1,106 @@
 #!/usr/bin/python
 import glob
+import queue
+import subprocess
+import threading
+import time
 from enum import IntEnum
+
+
+class FeedbackPlayer:
+    """Serialize short mpg123 UI sounds without occupying the owner thread."""
+
+    def __init__(self, process_factory=None):
+        self._requests = queue.Queue(maxsize=16)
+        self._stop = threading.Event()
+        self._process_lock = threading.Lock()
+        self._process = None
+        self._process_factory = process_factory or subprocess.Popen
+        self._thread = threading.Thread(
+            target=self._run, name="rasplayer-feedback", daemon=True)
+        self._thread.start()
+
+    def play(self, name, count=1, interval=0.0, source="action"):
+        path = {
+            "generic": "./Sounds/System/0/generic.mp3",
+            "volume_up": "./Sounds/System/0/vol-up.mp3",
+            "volume_down": "./Sounds/System/0/vol-down.mp3",
+        }.get(name)
+        if path is None:
+            print("FEEDBACK rejected name=%s reason=unknown" % name, flush=True)
+            return False
+        try:
+            enqueued_at = time.monotonic()
+            self._requests.put_nowait((name, path, count, interval,
+                                       enqueued_at, source))
+            print("FEEDBACK enqueue name=%s source=%s uptime=%.6f count=%d "
+                  "depth=%d" %
+                  (name, source, enqueued_at, count,
+                   self._requests.qsize()), flush=True)
+            return True
+        except queue.Full:
+            print("FEEDBACK drop name=%s reason=queue_full" % name, flush=True)
+            return False
+
+    def _run(self):
+        while not self._stop.is_set():
+            try:
+                request = self._requests.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            if request is None:
+                self._requests.task_done()
+                break
+            name, path, count, interval, enqueued_at, source = request
+            try:
+                for index in range(count):
+                    if self._stop.is_set():
+                        break
+                    started = time.monotonic()
+                    print("FEEDBACK play_begin name=%s source=%s uptime=%.6f "
+                          "item=%d queue_wait_ms=%.3f" %
+                          (name, source, started, index + 1,
+                           (started - enqueued_at) * 1000.0), flush=True)
+                    process = self._process_factory(
+                        ["mpg123", "-q", "-o", "alsa", path],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                    with self._process_lock:
+                        self._process = process
+                    try:
+                        _, error = process.communicate(timeout=3.0)
+                        error = error.decode(errors="replace").strip()
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        _, error = process.communicate()
+                        error = "timeout: " + error.decode(
+                            errors="replace").strip()
+                    finally:
+                        with self._process_lock:
+                            self._process = None
+                    print("FEEDBACK play_complete name=%s source=%s item=%d "
+                          "duration_ms=%.3f returncode=%s stderr=%r" %
+                          (name, source, index + 1,
+                           (time.monotonic() - started) * 1000.0,
+                           process.returncode, error), flush=True)
+                    if index + 1 < count and self._stop.wait(interval):
+                        break
+            except Exception as exc:
+                print("FEEDBACK exception name=%s error=%r" % (name, exc),
+                      flush=True)
+            finally:
+                self._requests.task_done()
+
+    def close(self):
+        self._stop.set()
+        with self._process_lock:
+            process = self._process
+        if process is not None and process.poll() is None:
+            process.terminate()
+        try:
+            self._requests.put_nowait(None)
+        except queue.Full:
+            pass
+        self._thread.join(timeout=0.5)
 
 class SoundPlayerBase:
     # GPIO callbacks must remain tiny.  RasPlayer installs this dispatcher so
@@ -112,8 +212,11 @@ class SoundPlayerBase:
         state = self.player.get_state()
         if state == vlc.State.Playing:
             self.player.pause()
+            return True
         elif state == vlc.State.Paused:
             self.player.play()
+            return True
+        return False
         
         
         # if self.is_playing:

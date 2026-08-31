@@ -35,11 +35,15 @@ class OnlinePlayer(SoundPlayerBase):
 
     def buttonDown(self, buttonNumber):
         print("OnlinePlayer pressed generic button in online player " + str(buttonNumber))
+        if buttonNumber not in self.radios:
+            print("OnlinePlayer station switch ignored: invalid channel %s" %
+                  buttonNumber, flush=True)
+            return False
         self.currentRadio = buttonNumber
         print("OnlinePlayer play " + self.radios[self.currentRadio])
         # self.player.stop() # TODO: check if necessary
 
-        self._open(self.radios[self.currentRadio])
+        return self._open(self.radios[self.currentRadio])
 
     def _open(self, url):
         self._open_started = time.monotonic()
@@ -56,6 +60,7 @@ class OnlinePlayer(SoundPlayerBase):
               (time.monotonic(), result,
                (time.monotonic() - self._open_started) * 1000.0), flush=True)
         self.is_playing = result != -1
+        return self.is_playing
 
     def playNext(self):
         # play first if list was newly selected
@@ -68,7 +73,7 @@ class OnlinePlayer(SoundPlayerBase):
         print("play next: " + self.radios[self.currentRadio])
         # self.player.stop() # TODO: check if necessary
 
-        self._open(self.radios[self.currentRadio])
+        return self._open(self.radios[self.currentRadio])
 
     def playPrevious(self):
         # play first if list was newly selected
@@ -82,7 +87,7 @@ class OnlinePlayer(SoundPlayerBase):
 
         print("play next: " + self.radios[self.currentRadio])
         # self.player.stop() # TODO: check if necessary
-        self._open(self.radios[self.currentRadio])
+        return self._open(self.radios[self.currentRadio])
 
     def update(self):
         if self._open_started is None:
