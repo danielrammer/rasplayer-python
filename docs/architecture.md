@@ -76,7 +76,7 @@ automatic next-track command never enqueue UI feedback.
 | Music | 24 | `MusicPlayer` | waits one second, loads `Sounds/Music/01/*.mp3`, starts first track | libVLC/ALSA |
 | Animals | no dedicated selector in current source | `SamplePlayer(...Animals, 3)` | preloads `Animals/0/*.mp3`; plays a short sample pattern | pygame/SDL mixer |
 | Instrument samples | 25 | `SamplePlayer(...Instruments, 5)` | preloads `Instruments/0/*.mp3`; plays a short sample pattern | pygame/SDL mixer |
-| Online radio | 10 | `OnlinePlayer` | immediately starts the first HTTP station and monitors VLC state/timeout | libVLC/ALSA + network |
+| Online radio | 10 | `OnlinePlayer` | starts page 1/station 1; Prev/Next select one of three pages and the five action buttons open that page's stations | libVLC/ALSA + network |
 | Synth | 9 | `SynthPlayer` | starts FluidSynth ALSA driver and loads a system soundfont | FluidSynth/ALSA |
 | None | n/a | no active player | only startup/system sounds are available | pygame for system sound |
 
@@ -111,6 +111,9 @@ Instrument sample actions are press-only; their releases are ignored. Synth
 press and release remain strict FIFO: press selects the instrument and issues
 `noteon()`, the held level keeps it active, and release issues `noteoff()`.
 Commands received while a mode is still initializing are logged as skipped.
+In Online mode Prev/Next wrap the three-page selector without opening another
+stream; action-button presses select one of the five stations on that page.
+The complete mapping and endpoint verification are in `docs/online-radio.md`.
 
 **Verified from source:** Synth owns a dedicated ultrasonic worker. It accesses
 `/dev/gpiomem` through the same GPIO register path as the privileged hardware

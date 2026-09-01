@@ -1,0 +1,112 @@
+#!/bin/sh
+
+# Grow the compact image's second MBR partition and its ext4 filesystem after
+# it is flashed to a larger SD card. Detection is repeated on every boot so an
+# interrupted first attempt is retried safely; mutation only occurs when the
+# partition or filesystem is smaller than its containing device.
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+LC_ALL=C
+export LC_ALL
+
+DISK=/dev/mmcblk0
+ROOT=/dev/mmcblk0p2
+DISK_SYS=/sys/class/block/mmcblk0
+ROOT_SYS=/sys/class/block/mmcblk0p2
+STATUS=/run/rasplayer/root-resize.status
+MIN_GROW_SECTORS=2048
+
+mkdir -p /run/rasplayer
+
+write_status() {
+    result=$1
+    detail=$2
+    {
+        echo "result=${result}"
+        echo "detail=${detail}"
+    } > "${STATUS}.tmp"
+    mv "${STATUS}.tmp" "${STATUS}"
+}
+
+fail() {
+    detail=$1
+    write_status failed "${detail}"
+    /usr/bin/boottrace root_resize_failed "${detail}"
+    echo "root-resize: ${detail}" >&2
+    exit 1
+}
+
+case " $(cat /proc/cmdline) " in
+    *" root=${ROOT} "*) ;;
+    *) fail "unexpected_root_device" ;;
+esac
+
+[ -b "${DISK}" ] || fail "disk_device_missing"
+[ -b "${ROOT}" ] || fail "root_device_missing"
+[ -r "${DISK_SYS}/size" ] || fail "disk_size_unavailable"
+[ -r "${ROOT_SYS}/start" ] || fail "partition_start_unavailable"
+[ -r "${ROOT_SYS}/size" ] || fail "partition_size_unavailable"
+
+disk_sectors=$(cat "${DISK_SYS}/size")
+partition_start=$(cat "${ROOT_SYS}/start")
+partition_sectors=$(cat "${ROOT_SYS}/size")
+case "${disk_sectors}:${partition_start}:${partition_sectors}" in
+    *[!0-9:]*|:*|*::*|*:) fail "invalid_sector_metadata" ;;
+esac
+
+partition_end=$((partition_start + partition_sectors))
+available_sectors=$((disk_sectors - partition_end))
+partition_changed=no
+filesystem_changed=no
+
+if [ "${available_sectors}" -ge "${MIN_GROW_SECTORS}" ]; then
+    /usr/bin/boottrace root_partition_resize_begin \
+        "disk_sectors=${disk_sectors} start=${partition_start} old_sectors=${partition_sectors}"
+    parted -s "${DISK}" unit s resizepart 2 100% || \
+        fail "partition_resize_command_failed"
+    partprobe "${DISK}" 2>/dev/null || true
+
+    checks=0
+    while [ "${checks}" -lt 50 ]; do
+        new_partition_sectors=$(cat "${ROOT_SYS}/size")
+        [ "${new_partition_sectors}" -gt "${partition_sectors}" ] && break
+        sleep 0.1
+        checks=$((checks + 1))
+    done
+    [ "${new_partition_sectors}" -gt "${partition_sectors}" ] || \
+        fail "kernel_partition_size_did_not_update"
+    partition_sectors=${new_partition_sectors}
+    partition_changed=yes
+    /usr/bin/boottrace root_partition_resize_complete \
+        "new_sectors=${partition_sectors}"
+fi
+
+filesystem_blocks=$(tune2fs -l "${ROOT}" 2>/dev/null | \
+    awk -F: '/^Block count:/{gsub(/[[:space:]]/, "", $2); print $2; exit}')
+filesystem_block_size=$(tune2fs -l "${ROOT}" 2>/dev/null | \
+    awk -F: '/^Block size:/{gsub(/[[:space:]]/, "", $2); print $2; exit}')
+case "${filesystem_blocks}:${filesystem_block_size}" in
+    *[!0-9:]*|:*|*::*|*:) fail "invalid_filesystem_metadata" ;;
+esac
+filesystem_sectors=$((filesystem_blocks * filesystem_block_size / 512))
+
+if [ "${filesystem_sectors}" -lt "${partition_sectors}" ]; then
+    /usr/bin/boottrace root_filesystem_resize_begin \
+        "old_sectors=${filesystem_sectors} partition_sectors=${partition_sectors}"
+    resize2fs "${ROOT}" || fail "filesystem_resize_command_failed"
+    filesystem_changed=yes
+    /usr/bin/boottrace root_filesystem_resize_complete
+fi
+
+if [ "${partition_changed}" = yes ] || [ "${filesystem_changed}" = yes ]; then
+    result=resized
+else
+    result=already_full_size
+fi
+write_status "${result}" \
+    "partition_changed=${partition_changed},filesystem_changed=${filesystem_changed},disk_sectors=${disk_sectors},partition_sectors=${partition_sectors}"
+/usr/bin/boottrace root_resize_complete \
+    "result=${result} partition_changed=${partition_changed} filesystem_changed=${filesystem_changed}"
+
+exit 0

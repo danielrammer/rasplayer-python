@@ -5,6 +5,32 @@ from SoundPlayer import SoundPlayerBase
 
 class OnlinePlayer(SoundPlayerBase):
 
+    STATIONS_PER_PAGE = 5
+    OPEN_TIMEOUT_SECONDS = 20.0
+
+    stations = (
+        ("SomaFM Metal Detector", "http://ice2.somafm.com/metal-128-mp3"),
+        ("SomaFM Underground 80s", "http://ice2.somafm.com/u80s-128-mp3"),
+        ("SomaFM The Trip", "http://ice2.somafm.com/thetrip-128-mp3"),
+        ("Radio Swiss Classic", "http://stream.srg-ssr.ch/srgssr/rsc_de/mp3/128"),
+        ("SomaFM Sonic Universe", "http://ice2.somafm.com/sonicuniverse-128-mp3"),
+        ("BluesMusicFan Radio", "http://orbit.citrus3.com:8052/stream"),
+        ("Epic Rock Radio", "http://radio.streemlion.com:4200/stream"),
+        ("The 1920s Radio Network", "http://65.108.124.70:8181/stream"),
+        ("Positively 1990s", "http://streaming.positivity.radio/pr/posi90s/icecast.audio"),
+        ("Radio Paradise", "http://stream-uk1.radioparadise.com/mp3-192"),
+        # The original five stations intentionally remain unchanged and in
+        # their existing order on page 3.
+        ("Rockantenne", "http://mp3channels.webradio.antenne.de/rockantenne"),
+        ("80er-Kulthits", "http://mp3channels.webradio.antenne.de/80er-kulthits"),
+        ("Workout Hits", "http://mp3channels.webradio.antenne.de/workout-hits"),
+        ("Chillout", "http://mp3channels.webradio.antenne.de/chillout"),
+        ("Hitmix", "http://mp3channels.webradio.antenne.de/hitmix"),
+    )
+    radios = dict((index, station[1]) for index, station in enumerate(stations))
+    numberOfRadios = len(radios)
+    numberOfPages = numberOfRadios // STATIONS_PER_PAGE
+
     def __init__(self, vlcInstance, player, path):
         SoundPlayerBase.__init__(self, vlcInstance, player, path)
 
@@ -17,33 +43,26 @@ class OnlinePlayer(SoundPlayerBase):
         self._open_started = None
         self._last_state = None
         self._failure_reported = False
+        self.currentPage = 0
+        self.currentRadio = -1
         self.playNext()
-
-
-    radios = {
-        0: "http://mp3channels.webradio.antenne.de/rockantenne",    # Rockantenne
-        1: "http://mp3channels.webradio.antenne.de/80er-kulthits",  # 80er-Kulthits
-        2: "http://mp3channels.webradio.antenne.de/workout-hits",   # Workout Hits
-        3: "http://mp3channels.webradio.antenne.de/chillout",       # Chillout
-        4: "http://mp3channels.webradio.antenne.de/hitmix",         # hitmix
-        #5: "http://mp3channels.webradio.antenne.de/80er-kulthits",   # /80er-kulthits
-        #6: "http://live-icy.gss.dr.dk:8000/A/A25H.mp3"              # DR P5 (Oldies)
-    }
-
-    currentRadio = -1
-    numberOfRadios = len(radios)
 
     def buttonDown(self, buttonNumber):
         print("OnlinePlayer pressed generic button in online player " + str(buttonNumber))
-        if buttonNumber not in self.radios:
-            print("OnlinePlayer station switch ignored: invalid channel %s" %
+        if buttonNumber < 0 or buttonNumber >= self.STATIONS_PER_PAGE:
+            print("OnlinePlayer station switch ignored: invalid action button %s" %
                   buttonNumber, flush=True)
             return False
-        self.currentRadio = buttonNumber
-        print("OnlinePlayer play " + self.radios[self.currentRadio])
+        self.currentRadio = (
+            self.currentPage * self.STATIONS_PER_PAGE + buttonNumber)
+        name, url = self.stations[self.currentRadio]
+        print("ONLINE station_select page=%d button=%d station=%d name=%s" %
+              (self.currentPage + 1, buttonNumber + 1,
+               self.currentRadio + 1, name), flush=True)
+        print("OnlinePlayer play " + url)
         # self.player.stop() # TODO: check if necessary
 
-        return self._open(self.radios[self.currentRadio])
+        return self._open(url)
 
     def _open(self, url):
         self._open_started = time.monotonic()
@@ -90,12 +109,13 @@ class OnlinePlayer(SoundPlayerBase):
         return self._open(self.radios[self.currentRadio])
 
     def navigate(self, offset):
-        """Apply a coalesced station offset with one network open."""
-        start = self.currentRadio if self.currentRadio >= 0 else 0
-        self.currentRadio = (start + offset) % self.numberOfRadios
-        print("ONLINE navigate offset=%d from=%d to=%d" %
-              (offset, start, self.currentRadio), flush=True)
-        return self._open(self.radios[self.currentRadio])
+        """Apply a coalesced page offset without changing the station."""
+        start = self.currentPage
+        self.currentPage = (start + offset) % self.numberOfPages
+        print("ONLINE page_change offset=%d from=%d to=%d station=%d" %
+              (offset, start + 1, self.currentPage + 1,
+               self.currentRadio + 1), flush=True)
+        return True
 
     def update(self):
         if self._open_started is None:
@@ -117,7 +137,8 @@ class OnlinePlayer(SoundPlayerBase):
                       flush=True)
                 self._failure_reported = True
             self.is_playing = False
-        elif now - self._open_started >= 8.0 and not self._failure_reported:
+        elif (now - self._open_started >= self.OPEN_TIMEOUT_SECONDS and
+              not self._failure_reported):
             print("ONLINE timeout uptime=%.6f elapsed_ms=%.3f state=%s" %
                   (now, (now - self._open_started) * 1000.0, state),
                   flush=True)

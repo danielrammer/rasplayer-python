@@ -33,11 +33,18 @@ leaves the development machine.
    `wifi.network`, `dnl_authorized_keys`, and
    `rasplayer-update-public.pem` into its top-level directory. Do not copy
    either private key. Safely eject the card.
-5. On the first boot, `S40provision` imports the files, creates user `dnl`
+5. On the first boot, `S03resize-root` first expands partition 2 and its ext4
+   filesystem to the SD-card end without changing the FAT partition. Then
+   `S40provision` imports the files, creates user `dnl`
    (UID/GID 1000, `/home/dnl`, `/bin/sh`), installs the key as
    `/home/dnl/.ssh/authorized_keys`, and rebuilds `/etc/wpa_supplicant.conf`
    from the base configuration plus the network block. The account has a
    locked password; SSH access is key-only.
+
+The resize needs no console or SSH interaction. Once SSH is available, verify
+it with `cat /run/rasplayer/root-resize.status`, `df -h /`, and
+`parted -s /dev/mmcblk0 unit MiB print`. Reboot once more and confirm the
+status becomes `result=already_full_size`; this is the idempotency check.
 
 The provisioning files remain on the FAT partition as local inputs. To
 deprovision network/SSH access, remove `wifi.network` and

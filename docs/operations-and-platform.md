@@ -3,7 +3,7 @@
 ## Evidence convention
 
 This document describes the current Buildroot deployment as reviewed on
-2026-08-31. **Verified** is supported by tracked material or an explicitly
+2026-09-01. **Verified** is supported by tracked material or an explicitly
 identified physical-Pi test. **Inference** is a risk assessment. **Open
 question** requires device or wiring evidence.
 
@@ -25,6 +25,15 @@ restart behavior and an owner-thread heartbeat. Persistent bounded logs live
 under `/var/lib/rasplayer/logs`; boot and diagnostic snapshots are also copied
 to the FAT boot partition. `LOCAL_READY` means the GPIO callbacks are installed
 and the startup cue was launched successfully.
+
+The image remains a compact 64 MiB FAT plus 768 MiB ext4 artifact. During the
+first BusyBox init pass, `S03resize-root` safely extends MBR partition 2 to the
+physical card end and online-grows its ext4 filesystem. It checks actual block
+and filesystem sizes on every boot, changes only undersized layers, and is
+therefore retry-safe and idempotent. This storage step completes before FAT
+provisioning, Wi-Fi, Dropbear, and RasPlayer startup; subsequent boots perform
+only the size checks. GNU Parted, e2fsprogs resize tools, and `rsync` are image
+packages.
 
 The current physical power-on-to-audible observation remains about 10 seconds.
 The measured kernel-relative `LOCAL_READY` boundary is about 6.2 seconds. An
@@ -82,6 +91,28 @@ partition changes, provisioning, Dropbear, the verifier itself, or public-key
 trust changes. Preserve the known-good image and the three uncommitted FAT
 provisioning inputs (`wifi.network`, `dnl_authorized_keys`, and
 `rasplayer-update-public.pem`) before flashing.
+
+After a new-image flash, validate storage and the added transfer utility with:
+
+```sh
+cat /run/rasplayer/root-resize.status
+parted -s /dev/mmcblk0 unit MiB print
+df -h /
+rsync --version
+```
+
+The root partition and `df` capacity should reflect the physical card (minus
+the 64 MiB boot partition and alignment), while partition 1 must retain its
+original start and size.
+
+**Verified off-target on 2026-09-01:** a clean build produced an 833 MiB image
+with the unchanged 64 MiB FAT partition and 768 MiB ext4 partition. Its SHA-256
+is `5dee8ec731f268a2b5607675c1bc3f96b39ccc2a420941e079c7e3b0cc0caf1d`.
+On a disposable copy enlarged to 2 GiB, partition 2 grew online from 768 MiB
+to the image end, the mounted ext4 filesystem grew from 196608 to 507648
+4-KiB blocks, and a subsequent read-only `e2fsck` completed cleanly. Physical
+Pi verification remains distinct: record the real card capacity, `rsync`
+version, and `S03resize-root` boottrace duration after flashing and booting.
 
 ## Current event and safety model
 

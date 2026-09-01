@@ -27,10 +27,22 @@ This repository does not
 write images to physical drives. The initial image must be hardware-tested
 before enabling immutable-root and hardware-watchdog production policies.
 
-The image uses an MBR partition table with 1 MiB alignment: a 64 MiB bootable
-FAT partition followed by a 768 MiB ext4 root partition. The boot partition
+The generated image stays compact and uses an MBR partition table with 1 MiB
+alignment: a 64 MiB bootable FAT partition followed by a 768 MiB ext4 root
+partition. The boot partition
 contains the AArch64 `Image`, Pi 3/3B+ DTBs, firmware, overlays, `cmdline.txt`,
 and the project-owned `config.txt`.
+
+On first boot, `S03resize-root` compares partition 2 with the physical SD-card
+size. When at least 1 MiB is unused, it uses GNU Parted to extend only
+partition 2 to the end of `/dev/mmcblk0`, asks the kernel to refresh that
+partition, and uses `resize2fs` to grow the mounted ext4 root filesystem. It
+validates the fixed root device from the kernel command line and reads sizes
+from sysfs before making changes. On later boots it performs the same read-only
+checks and records `already_full_size`; interrupted or partially completed
+growth is retried without relying on a completion marker. Status and
+timestamped events are available in `/run/rasplayer/root-resize.status` and
+the normal boot timeline. The FAT boot partition is not changed.
 
 The root filesystem routes default ALSA playback and mixer control to card 0,
 matching the measured Raspberry Pi baseline. BusyBox init starts Wi-Fi
@@ -54,6 +66,10 @@ and `LOCAL_READY`. After readiness it saves the report as `boot-timeline.txt`
 on the FAT boot partition and retains the previous two reports. See
 `docs/buildroot-boot-instrumentation.md` for the physical test and offline
 retrieval procedure.
+
+The target also includes `rsync`, GNU Parted/`partprobe`, and the e2fsprogs
+`resize2fs`/`tune2fs` utilities. `rsync --version` is the basic target-side
+availability check.
 
 A later background snapshot is also written as `rasplayer-diagnostics.txt` on
 the FAT partition. It captures post-readiness application, supervisor, GPIO,

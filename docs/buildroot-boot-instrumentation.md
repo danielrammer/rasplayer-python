@@ -28,6 +28,8 @@ The image records:
 - timestamped kernel initialization and `/sbin/init` launch in `dmesg`;
 - `userspace_rcS_begin` and `userspace_rcS_end`;
 - start, end, exit status, and therefore duration of every `S??` init script;
+- partition-2 and ext4 resize decisions, including the first-boot duration of
+  `S03resize-root`;
 - first userspace observation of `/dev/snd/pcmC0D0p`;
 - RasPlayer init-script, manager, Python-launch, and child-start boundaries;
 - Python entry, minimum imports, GPIO readiness, mpg123 launch/process/validation,
@@ -66,9 +68,14 @@ requires mounting the second partition on Linux or reading it with `debugfs`.
 
 ## Current delay candidates to measure, not optimize yet
 
-The generated init order is `S01seedrng`, `S01syslogd`, `S02klogd`,
-`S02sysctl`, `S40network`, `S41wifi`, `S50dropbear`, then `S50rasplayer`.
+The generated init order includes `S01seedrng`, `S01syslogd`, `S02klogd`,
+`S02sysctl`, `S03resize-root`, `S40provision`, `S41wifi`, `S50dropbear`, then
+`S50rasplayer`.
 Every earlier script is synchronous from RasPlayer's perspective.
+
+- `S03resize-root` is expected to add measurable I/O only on the first boot
+  after flashing to a larger card. Later boots still run its read-only size
+  checks; compare its traced duration separately from the one-time resize.
 
 - `S40network` runs `ifup -a` for `eth0`. Its generated interface contains
   `wait-delay 15`, which applies only if the Ethernet interface itself is

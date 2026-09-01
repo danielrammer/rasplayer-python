@@ -2,6 +2,7 @@
 set -eu
 
 chmod 0755 "${TARGET_DIR}/etc/init.d/rcS" \
+    "${TARGET_DIR}/etc/init.d/S03resize-root" \
     "${TARGET_DIR}/etc/init.d/S40provision" \
     "${TARGET_DIR}/etc/init.d/S41wifi" \
     "${TARGET_DIR}/etc/init.d/S50dropbear" \

@@ -61,8 +61,10 @@ commands retain chronological order.
 - `volume_delta` sums pending 10-percent changes. Opposing changes cancel a
   pending entry at zero, and the owner makes one clamped `amixer` call for the
   resulting target.
-- `navigation_delta` sums next/previous offsets. Music, Online, and sample
-  players calculate the final wrapped index and open/load it once.
+- `navigation_delta` sums next/previous offsets. Music and sample players
+  calculate the final wrapped item and open/load it once. Online calculates
+  the final wrapped page without opening a station; its five station buttons
+  retain latest-value selection coalescing.
 - Music playlist and Online station selectors use latest-value replacement,
   tagged with mode and generation. A selection from an obsolete mode
   generation is skipped.
@@ -113,6 +115,22 @@ and 7.297 ms input-to-action latency and emitted no feedback request. Physical
 Next, playlist selection, and Play/Pause retained their intended audible
 acknowledgements. The regression test asserts the callback's distinct command
 identity so natural playback cannot silently re-enter the user-feedback path.
+
+**Regression restored on 2026-09-01:** the freshly flashed Buildroot
+`image-base` contained the pre-fix `MusicPlayer.py` and `RasPlayer.py`. Its live
+log showed `Song ended` enqueueing `navigation_delta`, followed by
+`FEEDBACK ... source=navigation`. Signed release
+`music-radio15-20260901-1` restored the current source through the normal SSH
+installer while retaining `image-base` as the rollback target. On the Pi, a
+subsequent natural end enqueued distinct `automatic_next`, advanced in 7.503 ms,
+and emitted no feedback request. Owner-path regression coverage now also
+asserts exactly one generic acknowledgement for accepted physical Prev/Next,
+playlist selection, and Music Play/Pause actions.
+
+Final follow-up release `music-radio15-20260901-2` retains those Music files
+unchanged while completing Online-radio compatibility. It is the active
+release; `music-radio15-20260901-1` is the atomic rollback target and
+`image-base` remains installed as the original image release.
 
 ## Deployment validation (2026-08-28)
 
